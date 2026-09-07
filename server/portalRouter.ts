@@ -18,6 +18,7 @@ import {
   createTruck,
   deleteExpense,
   deleteMaintenance,
+  deleteTrip,
   deleteTruckDocument,
   listExpenses,
   listExpenseTypes,
@@ -116,6 +117,8 @@ export const portalRouter = router({
       status: z.enum(["active", "ended"]),
       returnedAt: z.number().int().positive().optional(),
     })).mutation(({ input }) => setTripStatus(input.tripReference, input.status, input.returnedAt)),
+    deleteTrip: portalProcedure.input(z.object({ tripReference: z.string().min(1).max(80) }))
+      .mutation(({ input }) => deleteTrip(input.tripReference)),
   }),
 
   expenses: router({

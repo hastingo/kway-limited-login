@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { ArchiveRestore, CircleDollarSign, FileText, Flag, PackageCheck, Paperclip, Plus, Route } from "lucide-react";
+import { ArchiveRestore, CircleDollarSign, Eye, FileText, Flag, PackageCheck, Paperclip, Plus, Route, Trash2 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { toast } from "sonner";
@@ -30,6 +30,7 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
   const [filter, setFilter] = useState<RecordFilter>("all");
   const [form, setForm] = useState(emptyIncome);
   const [attachments, setAttachments] = useState<UploadPayload[]>([]);
+  const [viewTrip, setViewTrip] = useState<string | null>(null);
 
   const createIncome = trpc.portal.income.create.useMutation({
     onSuccess: async result => {
@@ -49,6 +50,17 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
     },
     onError: error => toast.error("Could not update trip", { description: error.message }),
   });
+  const deleteTrip = trpc.portal.income.deleteTrip.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.portal.income.list.invalidate(),
+        utils.portal.expenses.list.invalidate(),
+      ]);
+      setViewTrip(null);
+      toast.success("Trip deleted", { description: "Linked cargo records and trip expenses were removed." });
+    },
+    onError: error => toast.error("Could not delete trip", { description: error.message }),
+  });
 
   const totalIncome = incomes.reduce((sum, item) => sum + Number(item.incomeAmount), 0);
   const references = Array.from(new Set(incomes.filter(item => item.cargoType === "going").map(item => item.tripReference)));
@@ -59,6 +71,7 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
   }, [incomes]);
   const endedGroups = new Set(incomes.filter(item => item.status === "ended").map(item => item.tripReference));
   const filtered = incomes.filter(item => filter === "all" || filter === "ended" ? (filter === "all" || item.status === "ended") : item.cargoType === filter);
+  const viewedRecords = viewTrip ? incomes.filter(item => item.tripReference === viewTrip) : [];
   const pieData = [
     { name: "Going cargo", value: incomes.filter(item => item.cargoType === "going").reduce((sum, item) => sum + Number(item.incomeAmount), 0), color: "#153852" },
     { name: "Return cargo", value: incomes.filter(item => item.cargoType === "return").reduce((sum, item) => sum + Number(item.incomeAmount), 0), color: "#ed7d2b" },
@@ -85,6 +98,13 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
     setForm(current => ({ ...current, cargoType, tripReference: cargoType === "return" ? references[0] ?? "" : "" }));
   };
 
+  const confirmDeleteTrip = (tripReference: string) => {
+    const linkedRecords = incomes.filter(item => item.tripReference === tripReference).length;
+    if (window.confirm(`Delete ${tripReference}? This permanently removes ${linkedRecords} cargo record${linkedRecords === 1 ? "" : "s"}, attachments, and linked trip expenses.`)) {
+      deleteTrip.mutate({ tripReference });
+    }
+  };
+
   return (
     <div className="page-enter">
       <PageHeader
@@ -108,7 +128,7 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
               {activeGroups.slice(0, 5).map(([reference, records]) => {
                 const main = records[0];
                 const tripIncome = records.reduce((sum, item) => sum + Number(item.incomeAmount), 0);
-                return <div key={reference} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><span className="text-xs font-extrabold text-[#18354f]">{reference}</span><StatusPill status="active" /></div><p className="mt-1.5 text-[10px] text-[#74808a]">{main.truck.registrationNumber} · {main.containerNumber} · {main.destination}</p></div><div className="flex items-center justify-between gap-4 sm:justify-end"><span className="text-xs font-extrabold text-[#24384b]">{money(tripIncome)}</span><button type="button" onClick={() => { setEndTrip(reference); setReturnDate(toDateInput()); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#fff0e4] px-3 text-[10px] font-extrabold text-[#bd510a] hover:bg-[#ffe4d0]"><Flag className="size-3.5" />End trip</button></div></div>;
+                return <div key={reference} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><span className="text-xs font-extrabold text-[#18354f]">{reference}</span><StatusPill status="active" /></div><p className="mt-1.5 text-[10px] text-[#74808a]">{main.truck.registrationNumber} · {main.containerNumber} · {main.destination}</p></div><div className="flex items-center justify-between gap-3 sm:justify-end"><span className="text-xs font-extrabold text-[#24384b]">{money(tripIncome)}</span><button type="button" onClick={() => setViewTrip(reference)} className="flex size-8 items-center justify-center rounded-lg border border-[#e1e5e3] text-[#61717e] hover:text-[#17354f]" aria-label={`View ${reference}`}><Eye className="size-3.5" /></button><button type="button" onClick={() => { setEndTrip(reference); setReturnDate(toDateInput()); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#fff0e4] px-3 text-[10px] font-extrabold text-[#bd510a] hover:bg-[#ffe4d0]"><Flag className="size-3.5" />End trip</button><button type="button" onClick={() => confirmDeleteTrip(reference)} className="flex size-8 items-center justify-center rounded-lg border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700" aria-label={`Delete ${reference}`}><Trash2 className="size-3.5" /></button></div></div>;
               })}
             </div>
           )}
@@ -130,7 +150,7 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
             <table className="w-full min-w-[1080px] text-left">
               <thead><tr className="bg-[#fafbf9] text-[9px] font-extrabold tracking-[0.1em] text-[#89939a] uppercase"><th className="px-5 py-3">Trip reference</th><th className="px-5 py-3">Cargo</th><th className="px-5 py-3">Truck / container</th><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Destination</th><th className="px-5 py-3">Loaded</th><th className="px-5 py-3">Container returned</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Files</th><th className="px-5 py-3 text-right">Amount</th><th className="px-5 py-3">Action</th></tr></thead>
               <tbody className="divide-y divide-[#edf0ee]">
-                {filtered.map(item => <tr key={item.id} className="text-[10px] text-[#536370] hover:bg-[#fafbf9]"><td className="px-5 py-4 font-extrabold text-[#18354f]">{item.tripReference}</td><td className="px-5 py-4"><StatusPill status={item.cargoType} /></td><td className="px-5 py-4"><p className="font-bold text-[#35495c]">{item.truck.registrationNumber}</p><p className="mt-1 text-[#8a949b]">{item.containerNumber}</p></td><td className="px-5 py-4">{item.customerName}</td><td className="px-5 py-4">{item.destination}</td><td className="px-5 py-4">{shortDate(item.dateOfLoading)}</td><td className="px-5 py-4 font-semibold">{shortDate(item.returnedAt)}</td><td className="px-5 py-4"><StatusPill status={item.status} /></td><td className="px-5 py-4">{item.attachments.length ? <a href={item.attachments[0].fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-[#c9580e]"><Paperclip className="size-3" />{item.attachments.length}</a> : "—"}</td><td className="px-5 py-4 text-right font-extrabold text-[#24384b]">{money(item.incomeAmount)}</td><td className="px-5 py-4">{item.status === "ended" ? <button type="button" onClick={() => setStatus.mutate({ tripReference: item.tripReference, status: "active" })} className="inline-flex items-center gap-1 font-extrabold text-[#c9580e]"><ArchiveRestore className="size-3.5" />Reactivate</button> : "—"}</td></tr>)}
+                {filtered.map(item => <tr key={item.id} className="text-[10px] text-[#536370] hover:bg-[#fafbf9]"><td className="px-5 py-4 font-extrabold text-[#18354f]">{item.tripReference}</td><td className="px-5 py-4"><StatusPill status={item.cargoType} /></td><td className="px-5 py-4"><p className="font-bold text-[#35495c]">{item.truck.registrationNumber}</p><p className="mt-1 text-[#8a949b]">{item.containerNumber}</p></td><td className="px-5 py-4">{item.customerName}</td><td className="px-5 py-4">{item.destination}</td><td className="px-5 py-4">{shortDate(item.dateOfLoading)}</td><td className="px-5 py-4 font-semibold">{shortDate(item.returnedAt)}</td><td className="px-5 py-4"><StatusPill status={item.status} /></td><td className="px-5 py-4">{item.attachments.length ? <a href={item.attachments[0].fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-[#c9580e]"><Paperclip className="size-3" />{item.attachments.length}</a> : "—"}</td><td className="px-5 py-4 text-right font-extrabold text-[#24384b]">{money(item.incomeAmount)}</td><td className="px-5 py-4"><div className="flex items-center gap-2"><button type="button" onClick={() => setViewTrip(item.tripReference)} className="text-[#76828b] hover:text-[#17354f]" aria-label={`View ${item.tripReference}`}><Eye className="size-4" /></button>{item.status === "ended" ? <button type="button" onClick={() => setStatus.mutate({ tripReference: item.tripReference, status: "active" })} className="inline-flex items-center gap-1 font-extrabold text-[#c9580e]"><ArchiveRestore className="size-3.5" />Reactivate</button> : null}<button type="button" onClick={() => confirmDeleteTrip(item.tripReference)} className="text-[#76828b] hover:text-red-600" aria-label={`Delete ${item.tripReference}`}><Trash2 className="size-4" /></button></div></td></tr>)}
               </tbody>
             </table>
           </div>
@@ -139,10 +159,10 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto rounded-2xl border-[#e1e5e3] bg-[#f9faf7]">
-          <DialogHeader><DialogTitle className="font-display text-3xl font-bold text-[#15324b] uppercase">Add income</DialogTitle><DialogDescription>Create a going or return cargo record. Going cargo receives a new reference automatically.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle className="font-display text-3xl font-bold text-[#15324b] uppercase">Add income</DialogTitle><DialogDescription>Create a going or return cargo record. New going trips receive a short reference such as TRIP-0001.</DialogDescription></DialogHeader>
           <form onSubmit={submitIncome} className="mt-3 grid gap-4 sm:grid-cols-2">
             <Field label="Cargo type"><select className={inputClass} value={form.cargoType} onChange={event => changeCargoType(event.target.value as "going" | "return")}><option value="going">Going cargo</option><option value="return">Return cargo</option></select></Field>
-            <Field label="Trip reference" hint={form.cargoType === "going" ? "Automatic" : undefined}>{form.cargoType === "going" ? <input disabled className={`${inputClass} bg-[#eef1ef] text-[#7e898f]`} value="Generated when saved" /> : <select required className={inputClass} value={form.tripReference} onChange={event => setForm(current => ({ ...current, tripReference: event.target.value }))}><option value="" disabled>Select existing trip</option>{references.map(reference => <option key={reference} value={reference}>{reference}</option>)}</select>}</Field>
+            <Field label="Trip reference" hint={form.cargoType === "going" ? "Automatic" : undefined}>{form.cargoType === "going" ? <input disabled className={`${inputClass} bg-[#eef1ef] text-[#7e898f]`} value="TRIP-0001 format" /> : <select required className={inputClass} value={form.tripReference} onChange={event => setForm(current => ({ ...current, tripReference: event.target.value }))}><option value="" disabled>Select existing trip</option>{references.map(reference => <option key={reference} value={reference}>{reference}</option>)}</select>}</Field>
             <Field label="Truck"><select required className={inputClass} value={form.truckId} onChange={event => setForm(current => ({ ...current, truckId: event.target.value }))}><option value="" disabled>Select truck</option>{trucks.map(truck => <option key={truck.id} value={truck.id}>{truck.registrationNumber} · {truck.model}</option>)}</select></Field>
             <Field label="Date of loading"><input required type="date" className={inputClass} value={form.dateOfLoading} onChange={event => setForm(current => ({ ...current, dateOfLoading: event.target.value }))} /></Field>
             <Field label="Customer name"><input required className={inputClass} value={form.customerName} onChange={event => setForm(current => ({ ...current, customerName: event.target.value }))} placeholder="Customer or company" /></Field>
@@ -153,6 +173,16 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
             <div className="sm:col-span-2"><FilePicker label={attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? "" : "s"} selected` : "Add multiple attachments"} onChange={async files => setAttachments(await filesToPayload(files))} /></div>
             <div className="sm:col-span-2"><DialogActions onCancel={() => setAddOpen(false)} submitLabel="Save income" busy={createIncome.isPending} /></div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(viewTrip)} onOpenChange={open => !open && setViewTrip(null)}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto rounded-2xl border-[#e1e5e3] bg-[#f9faf7]">
+          <DialogHeader><DialogTitle className="font-display text-3xl font-bold text-[#15324b] uppercase">Trip detail</DialogTitle><DialogDescription>{viewTrip} · {viewedRecords.length} cargo record{viewedRecords.length === 1 ? "" : "s"}</DialogDescription></DialogHeader>
+          <div className="mt-3 space-y-3">
+            {viewedRecords.map(record => <div key={record.id} className="rounded-2xl border border-[#e2e6e4] bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2"><StatusPill status={record.cargoType} /><StatusPill status={record.status} /></div><span className="text-sm font-extrabold text-[#24384b]">{money(record.incomeAmount)}</span></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><TripDetail label="Truck" value={record.truck.registrationNumber} /><TripDetail label="Container" value={record.containerNumber} /><TripDetail label="Customer" value={record.customerName} /><TripDetail label="Destination" value={record.destination} /><TripDetail label="Loaded" value={shortDate(record.dateOfLoading)} /><TripDetail label="Container returned" value={shortDate(record.returnedAt)} /></div>{record.description ? <p className="mt-3 rounded-xl bg-[#f7f8f5] p-3 text-xs leading-5 text-[#536370]">{record.description}</p> : null}{record.attachments.length ? <div className="mt-3 flex flex-wrap gap-2">{record.attachments.map(file => <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-[#e1e5e3] px-3 py-2 text-[10px] font-bold text-[#c9580e]"><Paperclip className="size-3.5" />{file.fileName}</a>)}</div> : null}</div>)}
+          </div>
+          <div className="mt-5 flex justify-end"><button type="button" onClick={() => viewTrip && confirmDeleteTrip(viewTrip)} disabled={deleteTrip.isPending} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 text-xs font-extrabold text-red-700 hover:bg-red-100 disabled:opacity-50"><Trash2 className="size-4" />Delete trip</button></div>
         </DialogContent>
       </Dialog>
 
@@ -167,4 +197,8 @@ export default function IncomeTab({ incomes, trucks, isLoading }: { incomes: Inc
       </Dialog>
     </div>
   );
+}
+
+function TripDetail({ label, value }: { label: string; value: string }) {
+  return <div><p className="text-[9px] font-extrabold tracking-[0.1em] text-[#8b959c] uppercase">{label}</p><p className="mt-1 text-xs font-bold text-[#2f4356]">{value}</p></div>;
 }

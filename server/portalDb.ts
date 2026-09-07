@@ -142,11 +142,8 @@ export async function listIncome() {
   return rows.map(row => ({ ...row.income, truck: row.truck, attachments: byIncome.get(row.income.id) ?? [] }));
 }
 
-function generateTripReference() {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
-  return `KW-${date}-${time}`;
+export function formatTripReference(incomeId: number) {
+  return `TRIP-${String(incomeId).padStart(4, "0")}`;
 }
 
 export async function createIncome(input: {
@@ -162,18 +159,20 @@ export async function createIncome(input: {
   attachments: UploadInput[];
 }) {
   const db = await requireDb();
-  const tripReference = input.cargoType === "going" ? generateTripReference() : input.tripReference?.trim();
-  if (!tripReference) throw new Error("Return cargo requires an existing trip reference");
+  const selectedReference = input.tripReference?.trim();
+  if (input.cargoType === "return" && !selectedReference) {
+    throw new Error("Return cargo requires an existing trip reference");
+  }
 
   if (input.cargoType === "return") {
     const existing = await db.select({ id: incomeRecords.id }).from(incomeRecords)
-      .where(eq(incomeRecords.tripReference, tripReference)).limit(1);
+      .where(eq(incomeRecords.tripReference, selectedReference!)).limit(1);
     if (existing.length === 0) throw new Error("Selected trip reference does not exist");
   }
 
   const [created] = await db.insert(incomeRecords).values({
     cargoType: input.cargoType,
-    tripReference,
+    tripReference: input.cargoType === "going" ? "TRIP-PENDING" : selectedReference!,
     truckId: input.truckId,
     dateOfLoading: input.dateOfLoading,
     customerName: input.customerName.trim(),
@@ -182,6 +181,13 @@ export async function createIncome(input: {
     incomeAmount: input.incomeAmount.toFixed(2),
     description: input.description?.trim() || null,
   }).$returningId();
+
+  const tripReference = input.cargoType === "going"
+    ? formatTripReference(created.id)
+    : selectedReference!;
+  if (input.cargoType === "going") {
+    await db.update(incomeRecords).set({ tripReference }).where(eq(incomeRecords.id, created.id));
+  }
 
   if (input.attachments.length) {
     const uploaded = await uploadFiles(`income-${created.id}`, input.attachments);
@@ -196,6 +202,19 @@ export async function setTripStatus(tripReference: string, status: "active" | "e
     status,
     returnedAt: status === "ended" ? returnedAt ?? Date.now() : null,
   }).where(eq(incomeRecords.tripReference, tripReference));
+  return { success: true as const };
+}
+
+export async function deleteTrip(tripReference: string) {
+  const db = await requireDb();
+  const existing = await db.select({ id: incomeRecords.id }).from(incomeRecords)
+    .where(eq(incomeRecords.tripReference, tripReference)).limit(1);
+  if (existing.length === 0) throw new Error("Trip reference was not found");
+
+  await db.transaction(async transaction => {
+    await transaction.delete(expenses).where(eq(expenses.tripReference, tripReference));
+    await transaction.delete(incomeRecords).where(eq(incomeRecords.tripReference, tripReference));
+  });
   return { success: true as const };
 }
 

@@ -216,11 +216,11 @@ export default function ExpensesTab({
         <DialogContent className="max-h-[92vh] w-[96vw] !max-w-[96vw] overflow-y-auto rounded-2xl border-[#e1e5e3] bg-[#f9faf7] xl:!max-w-[1400px]">
           <DialogHeader><DialogTitle className="font-display text-3xl font-bold text-[#15324b] uppercase">{editing ? "Edit expense" : "Record expenses"}</DialogTitle><DialogDescription>Each expense is displayed as one horizontal row. Saved custom types become available in the dropdown for future entries.</DialogDescription></DialogHeader>
           <form onSubmit={submit} className="mt-4 space-y-3">
-            <div className="hidden grid-cols-[1.05fr_0.8fr_0.95fr_1.35fr_0.7fr_0.65fr_32px] gap-2 px-3 text-[9px] font-extrabold tracking-[0.1em] text-[#7c878f] uppercase xl:grid">
+            <div className="hidden grid-cols-[1.05fr_0.8fr_0.95fr_1.35fr_0.7fr_0.65fr_32px] gap-2 px-3 text-[9px] font-extrabold tracking-[0.1em] text-[#7c878f] uppercase lg:grid">
               <span>Trip reference</span><span>Date</span><span>Expense type</span><span>Description</span><span>Amount</span><span>Attachment</span><span />
             </div>
             {drafts.map((draft, index) => (
-              <div key={draft.key} className="grid grid-cols-1 gap-3 rounded-2xl border border-[#e2e6e4] bg-white p-3 xl:grid-cols-[1.05fr_0.8fr_0.95fr_1.35fr_0.7fr_0.65fr_32px] xl:items-start xl:gap-2">
+              <div key={draft.key} className="grid grid-cols-1 gap-3 rounded-2xl border border-[#e2e6e4] bg-white p-3 lg:grid-cols-[1.05fr_0.8fr_0.95fr_1.35fr_0.7fr_0.65fr_32px] lg:items-start lg:gap-2">
                 <RowField label="Trip reference"><select required className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.tripReference} onChange={event => updateDraft(draft.key, { tripReference: event.target.value })}><option value="" disabled>Select trip</option>{references.map(reference => <option key={reference} value={reference}>{reference}</option>)}</select></RowField>
                 <RowField label="Date"><input required type="date" className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.expenseDate} onChange={event => updateDraft(draft.key, { expenseDate: event.target.value })} /></RowField>
                 <RowField label="Expense type"><select className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.expenseType} onChange={event => updateDraft(draft.key, { expenseType: event.target.value, customType: "" })}>{expenseTypeOptions.map(type => <option key={type} value={type}>{type}</option>)}<option value={CUSTOM_VALUE}>+ Add custom type</option></select>{draft.expenseType === CUSTOM_VALUE ? <input required autoFocus className={`${inputClass} mt-2 h-9 px-2.5 text-xs`} value={draft.customType} onChange={event => updateDraft(draft.key, { customType: event.target.value })} placeholder="Custom type name" /> : null}</RowField>
@@ -247,7 +247,7 @@ export default function ExpensesTab({
 }
 
 function RowField({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block min-w-0"><span className="mb-1.5 block text-[9px] font-extrabold tracking-[0.08em] text-[#7c878f] uppercase xl:hidden">{label}</span>{children}</label>;
+  return <label className="block min-w-0"><span className="mb-1.5 block text-[9px] font-extrabold tracking-[0.08em] text-[#7c878f] uppercase lg:hidden">{label}</span>{children}</label>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
