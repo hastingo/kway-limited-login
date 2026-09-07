@@ -72,12 +72,12 @@
   --border: oklch(0.89 0.007 85);
   --input: oklch(0.89 0.007 85);
   --ring: oklch(0.68 0.16 48);
-  --sidebar: oklch(0.98 0.004 85);
-  --sidebar-foreground: oklch(0.25 0.035 246);
-  --sidebar-accent: oklch(0.94 0.006 85);
-  --sidebar-accent-foreground: oklch(0.25 0.035 246);
-  --sidebar-border: oklch(0.89 0.007 85);
-  --sidebar-ring: oklch(0.68 0.16 48);
+  --sidebar: #0c2033;
+  --sidebar-foreground: #ffffff;
+  --sidebar-accent: #17344e;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #ff8c35;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -195,6 +195,9 @@
 @media (prefers-reduced-motion: no-preference) {
   .form-enter {
     animation: form-enter 520ms var(--ease-out) both;
+  }
+  .page-enter {
+    animation: form-enter 340ms var(--ease-out) both;
   }
 
   @keyframes form-enter {

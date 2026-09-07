@@ -1,0 +1,110 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { publicProcedure, router } from "./_core/trpc";
+import {
+  clearPortalSessionCookie,
+  createPortalSession,
+  portalLoginInput,
+  portalProcedure,
+  readPortalSession,
+  setPortalSessionCookie,
+  validateTemporaryCredentials,
+} from "./portalAuth";
+import {
+  addTruckDocument,
+  createExpenses,
+  createIncome,
+  createTruck,
+  deleteExpense,
+  deleteTruckDocument,
+  listExpenses,
+  listIncome,
+  listTrucks,
+  setTripStatus,
+  updateExpense,
+  updateTruck,
+} from "./portalDb";
+
+const uploadSchema = z.object({
+  name: z.string().min(1).max(255),
+  type: z.string().max(120),
+  dataUrl: z.string().min(1).max(8_500_000),
+});
+
+const truckInput = z.object({
+  registrationNumber: z.string().min(2).max(64),
+  model: z.string().min(2).max(160),
+  driverName: z.string().min(2).max(160),
+  driverPhone: z.string().min(7).max(64),
+});
+
+const expenseInput = z.object({
+  tripReference: z.string().min(1).max(80),
+  expenseDate: z.number().int().positive(),
+  expenseType: z.string().min(2).max(120),
+  description: z.string().min(2).max(2000),
+  amount: z.number().positive(),
+  attachments: z.array(uploadSchema).max(5).default([]),
+});
+
+export const portalRouter = router({
+  auth: router({
+    status: publicProcedure.query(({ ctx }) => readPortalSession(ctx.req)),
+    login: publicProcedure.input(portalLoginInput).mutation(({ ctx, input }) => {
+      if (!validateTemporaryCredentials(input.email, input.password)) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect email or temporary password" });
+      }
+      const { token, expiresAt } = createPortalSession(input.email, input.rememberMe);
+      setPortalSessionCookie(ctx.req, ctx.res, token, expiresAt);
+      return { email: input.email.toLowerCase(), name: "Sales Operations", expiresAt };
+    }),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      clearPortalSessionCookie(ctx.req, ctx.res);
+      return { success: true as const };
+    }),
+  }),
+
+  trucks: router({
+    list: portalProcedure.query(() => listTrucks()),
+    create: portalProcedure.input(truckInput).mutation(({ input }) => createTruck(input)),
+    update: portalProcedure.input(truckInput.extend({ id: z.number().int().positive() })).mutation(({ input }) => updateTruck(input)),
+    addDocument: portalProcedure.input(z.object({
+      truckId: z.number().int().positive(),
+      documentType: z.string().min(2).max(120),
+      expiryDate: z.number().int().positive(),
+      file: uploadSchema,
+    })).mutation(({ input }) => addTruckDocument(input)),
+    deleteDocument: portalProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => deleteTruckDocument(input.id)),
+  }),
+
+  income: router({
+    list: portalProcedure.query(() => listIncome()),
+    create: portalProcedure.input(z.object({
+      cargoType: z.enum(["going", "return"]),
+      tripReference: z.string().max(80).optional(),
+      truckId: z.number().int().positive(),
+      dateOfLoading: z.number().int().positive(),
+      customerName: z.string().min(2).max(200),
+      containerNumber: z.string().min(2).max(100),
+      destination: z.string().min(2).max(200),
+      incomeAmount: z.number().positive(),
+      description: z.string().max(2000).optional(),
+      attachments: z.array(uploadSchema).max(5).default([]),
+    })).mutation(({ input }) => createIncome(input)),
+    setStatus: portalProcedure.input(z.object({
+      tripReference: z.string().min(1).max(80),
+      status: z.enum(["active", "ended"]),
+      returnedAt: z.number().int().positive().optional(),
+    })).mutation(({ input }) => setTripStatus(input.tripReference, input.status, input.returnedAt)),
+  }),
+
+  expenses: router({
+    list: portalProcedure.query(() => listExpenses()),
+    createMany: portalProcedure.input(z.object({ records: z.array(expenseInput).min(1).max(10) }))
+      .mutation(({ input }) => createExpenses(input.records)),
+    update: portalProcedure.input(expenseInput.extend({ id: z.number().int().positive() }))
+      .mutation(({ input }) => updateExpense(input)),
+    delete: portalProcedure.input(z.object({ id: z.number().int().positive() }))
+      .mutation(({ input }) => deleteExpense(input.id)),
+  }),
+});
