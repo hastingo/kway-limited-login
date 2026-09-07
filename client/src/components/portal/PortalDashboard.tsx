@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import ExpensesTab from "./ExpensesTab";
 import IncomeTab from "./IncomeTab";
+import MaintenanceTab from "./MaintenanceTab";
 import OverviewTab from "./OverviewTab";
 import ReportsTab from "./ReportsTab";
 import TrucksTab from "./TrucksTab";
@@ -14,6 +15,7 @@ export default function PortalDashboard() {
   const trucksQuery = trpc.portal.trucks.list.useQuery(undefined, { retry: 1 });
   const incomeQuery = trpc.portal.income.list.useQuery(undefined, { retry: 1 });
   const expenseQuery = trpc.portal.expenses.list.useQuery(undefined, { retry: 1 });
+  const maintenanceQuery = trpc.portal.maintenance.list.useQuery(undefined, { retry: 1 });
   const logout = trpc.portal.auth.logout.useMutation({
     onSuccess: async () => {
       await utils.portal.auth.status.invalidate();
@@ -24,6 +26,7 @@ export default function PortalDashboard() {
   const trucks = trucksQuery.data ?? [];
   const incomes = incomeQuery.data ?? [];
   const expenses = expenseQuery.data ?? [];
+  const maintenance = maintenanceQuery.data ?? [];
   const alertCount = trucks.flatMap(truck => truck.documents).filter(document => document.expiryDate <= Date.now() + 14 * 86400000).length;
 
   const renderTab = () => {
@@ -33,7 +36,9 @@ export default function PortalDashboard() {
       case "income":
         return <IncomeTab incomes={incomes} trucks={trucks} isLoading={incomeQuery.isLoading} />;
       case "expenses":
-        return <ExpensesTab expenses={expenses} incomes={incomes} isLoading={expenseQuery.isLoading} />;
+        return <ExpensesTab expenses={expenses} incomes={incomes} trucks={trucks} isLoading={expenseQuery.isLoading} />;
+      case "maintenance":
+        return <MaintenanceTab records={maintenance} trucks={trucks} isLoading={maintenanceQuery.isLoading} />;
       case "reports":
         return <ReportsTab incomes={incomes} expenses={expenses} trucks={trucks} />;
       default:
@@ -41,7 +46,7 @@ export default function PortalDashboard() {
     }
   };
 
-  const hasError = trucksQuery.error || incomeQuery.error || expenseQuery.error;
+  const hasError = trucksQuery.error || incomeQuery.error || expenseQuery.error || maintenanceQuery.error;
 
   return (
     <DashboardLayout activeTab={activeTab} onNavigate={setActiveTab} onLogout={() => logout.mutate()} alertCount={alertCount}>

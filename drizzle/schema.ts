@@ -83,10 +83,30 @@ export const incomeAttachments = mysqlTable("incomeAttachments", {
 export const expenses = mysqlTable("expenses", {
   id: int("id").autoincrement().primaryKey(),
   tripReference: varchar("tripReference", { length: 80 }).notNull(),
+  truckId: int("truckId").references(() => trucks.id, { onDelete: "set null" }),
+  assetType: mysqlEnum("assetType", ["truck", "trailer"]),
   expenseDate: bigint("expenseDate", { mode: "number" }).notNull(),
   expenseType: varchar("expenseType", { length: 120 }).notNull(),
   description: text("description").notNull(),
   amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const expenseTypes = mysqlTable("expenseTypes", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 120 }).notNull().unique(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const maintenanceRecords = mysqlTable("maintenanceRecords", {
+  id: int("id").autoincrement().primaryKey(),
+  expenseId: int("expenseId").notNull().unique().references(() => expenses.id, { onDelete: "cascade" }),
+  truckId: int("truckId").notNull().references(() => trucks.id),
+  assetType: mysqlEnum("assetType", ["truck", "trailer"]).notNull(),
+  workshop: varchar("workshop", { length: 200 }),
+  odometerKm: int("odometerKm"),
+  nextServiceDate: bigint("nextServiceDate", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -107,3 +127,5 @@ export type Truck = typeof trucks.$inferSelect;
 export type TruckDocument = typeof truckDocuments.$inferSelect;
 export type IncomeRecord = typeof incomeRecords.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
+export type ExpenseType = typeof expenseTypes.$inferSelect;
+export type MaintenanceRecord = typeof maintenanceRecords.$inferSelect;

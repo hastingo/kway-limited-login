@@ -8,6 +8,13 @@
       "when": 1788779313725,
       "tag": "0000_little_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1788790414634,
+      "tag": "0001_steady_swordsman",
+      "breakpoints": true
     }
   ]
 }

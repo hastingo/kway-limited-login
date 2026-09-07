@@ -14,14 +14,19 @@ import {
   addTruckDocument,
   createExpenses,
   createIncome,
+  createMaintenance,
   createTruck,
   deleteExpense,
+  deleteMaintenance,
   deleteTruckDocument,
   listExpenses,
+  listExpenseTypes,
   listIncome,
+  listMaintenance,
   listTrucks,
   setTripStatus,
   updateExpense,
+  updateMaintenance,
   updateTruck,
 } from "./portalDb";
 
@@ -40,10 +45,25 @@ const truckInput = z.object({
 
 const expenseInput = z.object({
   tripReference: z.string().min(1).max(80),
+  truckId: z.number().int().positive().nullable().optional(),
+  assetType: z.enum(["truck", "trailer"]).nullable().optional(),
   expenseDate: z.number().int().positive(),
   expenseType: z.string().min(2).max(120),
   description: z.string().min(2).max(2000),
   amount: z.number().positive(),
+  attachments: z.array(uploadSchema).max(5).default([]),
+});
+
+const maintenanceInput = z.object({
+  truckId: z.number().int().positive(),
+  assetType: z.enum(["truck", "trailer"]),
+  serviceDate: z.number().int().positive(),
+  maintenanceType: z.string().min(2).max(120),
+  description: z.string().min(2).max(2000),
+  amount: z.number().positive(),
+  workshop: z.string().max(200).optional(),
+  odometerKm: z.number().int().nonnegative().optional(),
+  nextServiceDate: z.number().int().positive().optional(),
   attachments: z.array(uploadSchema).max(5).default([]),
 });
 
@@ -100,11 +120,24 @@ export const portalRouter = router({
 
   expenses: router({
     list: portalProcedure.query(() => listExpenses()),
+    types: portalProcedure.query(() => listExpenseTypes()),
     createMany: portalProcedure.input(z.object({ records: z.array(expenseInput).min(1).max(10) }))
       .mutation(({ input }) => createExpenses(input.records)),
     update: portalProcedure.input(expenseInput.extend({ id: z.number().int().positive() }))
       .mutation(({ input }) => updateExpense(input)),
     delete: portalProcedure.input(z.object({ id: z.number().int().positive() }))
       .mutation(({ input }) => deleteExpense(input.id)),
+  }),
+
+  maintenance: router({
+    list: portalProcedure.query(() => listMaintenance()),
+    create: portalProcedure.input(maintenanceInput)
+      .mutation(({ input }) => createMaintenance(input)),
+    update: portalProcedure.input(maintenanceInput.extend({
+      id: z.number().int().positive(),
+      expenseId: z.number().int().positive(),
+    })).mutation(({ input }) => updateMaintenance(input)),
+    delete: portalProcedure.input(z.object({ expenseId: z.number().int().positive() }))
+      .mutation(({ input }) => deleteMaintenance(input.expenseId)),
   }),
 });

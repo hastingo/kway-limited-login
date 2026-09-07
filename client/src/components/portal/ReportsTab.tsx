@@ -13,13 +13,17 @@ export default function ReportsTab({ incomes, expenses, trucks }: { incomes: Inc
   const totalIncome = incomes.reduce((sum, item) => sum + Number(item.incomeAmount), 0);
   const totalExpenses = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
   const tripTruck = new Map(incomes.map(item => [item.tripReference, item.truck.registrationNumber]));
+  const truckById = new Map(trucks.map(truck => [truck.id, truck.registrationNumber]));
 
   const rows = useMemo<ReportRow[]>(() => {
     if (view === "global") return [{ name: "K-Way Limited", income: totalIncome, expenses: totalExpenses, profit: totalIncome - totalExpenses }];
     if (view === "service") {
       return trucks.map(truck => {
         const refs = new Set(incomes.filter(item => item.truckId === truck.id).map(item => item.tripReference));
-        const serviceExpenses = expenses.filter(item => refs.has(item.tripReference) && /maintenance|service|tyre/i.test(item.expenseType)).reduce((sum, item) => sum + Number(item.amount), 0);
+        const serviceExpenses = expenses.filter(item =>
+          (item.truckId === truck.id || refs.has(item.tripReference)) &&
+          (item.tripReference === "MAINTENANCE" || /maintenance|service|repair|tyre/i.test(item.expenseType))
+        ).reduce((sum, item) => sum + Number(item.amount), 0);
         return { name: truck.registrationNumber, income: 0, expenses: serviceExpenses, profit: -serviceExpenses };
       }).filter(item => item.expenses > 0);
     }
@@ -32,13 +36,15 @@ export default function ReportsTab({ incomes, expenses, trucks }: { incomes: Inc
       groups.set(name, current);
     });
     expenses.forEach(item => {
-      const name = view === "trip" ? item.tripReference : tripTruck.get(item.tripReference) ?? "Unassigned";
+      const registration = item.truckId ? truckById.get(item.truckId) : tripTruck.get(item.tripReference);
+      const assetName = item.assetType === "trailer" && registration ? `${registration} trailer` : registration;
+      const name = view === "trip" ? item.tripReference : assetName ?? "Unassigned";
       const current = groups.get(name) ?? { name, income: 0, expenses: 0, profit: 0 };
       current.expenses += Number(item.amount);
       groups.set(name, current);
     });
     return Array.from(groups.values()).map(item => ({ ...item, profit: item.income - item.expenses }));
-  }, [view, incomes, expenses, trucks, totalIncome, totalExpenses, tripTruck]);
+  }, [view, incomes, expenses, trucks, totalIncome, totalExpenses, tripTruck, truckById]);
 
   const exportRows = rows.map(item => ({ Report: item.name, "Income (TZS)": item.income, "Expenses (TZS)": item.expenses, "Profit / Loss (TZS)": item.profit }));
   const reportTitle = view === "global" ? "Global Profit & Loss" : view === "trip" ? "Trip-wise Profit & Loss" : view === "truck" ? "Truck-wise Profit & Loss" : "Service & Maintenance Report";

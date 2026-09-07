@@ -29,16 +29,18 @@ import {
   ReceiptText,
   Truck,
   WalletCards,
+  Wrench,
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
-export type PortalTab = "dashboard" | "trucks" | "income" | "expenses" | "reports";
+export type PortalTab = "dashboard" | "trucks" | "income" | "expenses" | "maintenance" | "reports";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" as const },
   { icon: Truck, label: "Trucks", id: "trucks" as const },
   { icon: WalletCards, label: "Income", id: "income" as const },
   { icon: ReceiptText, label: "Expenses", id: "expenses" as const },
+  { icon: Wrench, label: "Maintenance", id: "maintenance" as const },
   { icon: BarChart3, label: "Profit & Loss", id: "reports" as const },
 ];
 

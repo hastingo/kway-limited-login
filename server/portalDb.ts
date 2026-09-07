@@ -1,9 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import {
   expenseAttachments,
+  expenseTypes,
   expenses,
   incomeAttachments,
   incomeRecords,
+  maintenanceRecords,
   truckDocuments,
   trucks,
 } from "../drizzle/schema";
@@ -210,8 +212,31 @@ export async function listExpenses() {
   return rows.map(row => ({ ...row, attachments: byExpense.get(row.id) ?? [] }));
 }
 
+export async function listExpenseTypes() {
+  const db = await requireDb();
+  return db.select().from(expenseTypes).orderBy(expenseTypes.name);
+}
+
+async function rememberExpenseType(name: string) {
+  const db = await requireDb();
+  const normalized = name.trim();
+  await db.insert(expenseTypes).values({ name: normalized }).onDuplicateKeyUpdate({
+    set: { name: normalized },
+  });
+}
+
+async function resolveExpenseTruckId(tripReference: string, explicitTruckId?: number | null) {
+  if (explicitTruckId) return explicitTruckId;
+  const db = await requireDb();
+  const [linked] = await db.select({ truckId: incomeRecords.truckId }).from(incomeRecords)
+    .where(eq(incomeRecords.tripReference, tripReference)).limit(1);
+  return linked?.truckId ?? null;
+}
+
 export async function createExpenses(inputs: Array<{
   tripReference: string;
+  truckId?: number | null;
+  assetType?: "truck" | "trailer" | null;
   expenseDate: number;
   expenseType: string;
   description: string;
@@ -221,8 +246,12 @@ export async function createExpenses(inputs: Array<{
   const db = await requireDb();
   const createdIds: number[] = [];
   for (const input of inputs) {
+    const truckId = await resolveExpenseTruckId(input.tripReference, input.truckId);
+    await rememberExpenseType(input.expenseType);
     const [created] = await db.insert(expenses).values({
       tripReference: input.tripReference,
+      truckId,
+      assetType: input.assetType ?? null,
       expenseDate: input.expenseDate,
       expenseType: input.expenseType.trim(),
       description: input.description.trim(),
@@ -240,6 +269,8 @@ export async function createExpenses(inputs: Array<{
 export async function updateExpense(input: {
   id: number;
   tripReference: string;
+  truckId?: number | null;
+  assetType?: "truck" | "trailer" | null;
   expenseDate: number;
   expenseType: string;
   description: string;
@@ -247,8 +278,12 @@ export async function updateExpense(input: {
   attachments: UploadInput[];
 }) {
   const db = await requireDb();
+  const truckId = await resolveExpenseTruckId(input.tripReference, input.truckId);
+  await rememberExpenseType(input.expenseType);
   await db.update(expenses).set({
     tripReference: input.tripReference,
+    truckId,
+    assetType: input.assetType ?? null,
     expenseDate: input.expenseDate,
     expenseType: input.expenseType.trim(),
     description: input.description.trim(),
@@ -265,4 +300,106 @@ export async function deleteExpense(id: number) {
   const db = await requireDb();
   await db.delete(expenses).where(eq(expenses.id, id));
   return { success: true as const };
+}
+
+export async function listMaintenance() {
+  const db = await requireDb();
+  const rows = await db
+    .select({ maintenance: maintenanceRecords, expense: expenses, truck: trucks })
+    .from(maintenanceRecords)
+    .innerJoin(expenses, eq(maintenanceRecords.expenseId, expenses.id))
+    .innerJoin(trucks, eq(maintenanceRecords.truckId, trucks.id))
+    .orderBy(desc(expenses.expenseDate), desc(maintenanceRecords.id));
+  const attachments = await db.select().from(expenseAttachments).orderBy(desc(expenseAttachments.createdAt));
+  const byExpense = new Map<number, (typeof expenseAttachments.$inferSelect)[]>();
+  for (const attachment of attachments) {
+    const list = byExpense.get(attachment.expenseId) ?? [];
+    list.push(attachment);
+    byExpense.set(attachment.expenseId, list);
+  }
+  return rows.map(row => ({
+    ...row.maintenance,
+    expense: { ...row.expense, attachments: byExpense.get(row.expense.id) ?? [] },
+    truck: row.truck,
+  }));
+}
+
+export async function createMaintenance(input: {
+  truckId: number;
+  assetType: "truck" | "trailer";
+  serviceDate: number;
+  maintenanceType: string;
+  description: string;
+  amount: number;
+  workshop?: string;
+  odometerKm?: number;
+  nextServiceDate?: number;
+  attachments: UploadInput[];
+}) {
+  const db = await requireDb();
+  await rememberExpenseType(input.maintenanceType);
+  const [expense] = await db.insert(expenses).values({
+    tripReference: "MAINTENANCE",
+    truckId: input.truckId,
+    assetType: input.assetType,
+    expenseDate: input.serviceDate,
+    expenseType: input.maintenanceType.trim(),
+    description: input.description.trim(),
+    amount: input.amount.toFixed(2),
+  }).$returningId();
+  const [maintenance] = await db.insert(maintenanceRecords).values({
+    expenseId: expense.id,
+    truckId: input.truckId,
+    assetType: input.assetType,
+    workshop: input.workshop?.trim() || null,
+    odometerKm: input.odometerKm ?? null,
+    nextServiceDate: input.nextServiceDate ?? null,
+  }).$returningId();
+  if (input.attachments.length) {
+    const uploaded = await uploadFiles(`maintenance-${maintenance.id}`, input.attachments);
+    await db.insert(expenseAttachments).values(uploaded.map(file => ({ expenseId: expense.id, ...file })));
+  }
+  return { id: maintenance.id, expenseId: expense.id };
+}
+
+export async function updateMaintenance(input: {
+  id: number;
+  expenseId: number;
+  truckId: number;
+  assetType: "truck" | "trailer";
+  serviceDate: number;
+  maintenanceType: string;
+  description: string;
+  amount: number;
+  workshop?: string;
+  odometerKm?: number;
+  nextServiceDate?: number;
+  attachments: UploadInput[];
+}) {
+  const db = await requireDb();
+  await rememberExpenseType(input.maintenanceType);
+  await db.update(expenses).set({
+    truckId: input.truckId,
+    assetType: input.assetType,
+    expenseDate: input.serviceDate,
+    expenseType: input.maintenanceType.trim(),
+    description: input.description.trim(),
+    amount: input.amount.toFixed(2),
+  }).where(eq(expenses.id, input.expenseId));
+  await db.update(maintenanceRecords).set({
+    truckId: input.truckId,
+    assetType: input.assetType,
+    workshop: input.workshop?.trim() || null,
+    odometerKm: input.odometerKm ?? null,
+    nextServiceDate: input.nextServiceDate ?? null,
+  }).where(eq(maintenanceRecords.id, input.id));
+  if (input.attachments.length) {
+    const uploaded = await uploadFiles(`maintenance-${input.id}`, input.attachments);
+    await db.insert(expenseAttachments).values(uploaded.map(file => ({ expenseId: input.expenseId, ...file })));
+  }
+  return { success: true as const };
+}
+
+export async function deleteMaintenance(expenseId: number) {
+  return deleteExpense(expenseId);
 }
