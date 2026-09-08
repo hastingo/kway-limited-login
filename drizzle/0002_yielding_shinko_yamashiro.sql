@@ -1,0 +1,1 @@
+ALTER TABLE `expenses` ADD `fuelLiters` decimal(10,2);

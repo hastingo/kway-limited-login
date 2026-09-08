@@ -10,6 +10,7 @@ import {
   setPortalSessionCookie,
   validateTemporaryCredentials,
 } from "./portalAuth";
+import { createPortalBackup, importPortalBackup } from "./portalBackup";
 import {
   addTruckDocument,
   createExpenses,
@@ -44,15 +45,24 @@ const truckInput = z.object({
   driverPhone: z.string().min(7).max(64),
 });
 
-const expenseInput = z.object({
+export const expenseInput = z.object({
   tripReference: z.string().min(1).max(80),
   truckId: z.number().int().positive().nullable().optional(),
   assetType: z.enum(["truck", "trailer"]).nullable().optional(),
   expenseDate: z.number().int().positive(),
   expenseType: z.string().min(2).max(120),
+  fuelLiters: z.number().positive().nullable().optional(),
   description: z.string().min(2).max(2000),
   amount: z.number().positive(),
   attachments: z.array(uploadSchema).max(5).default([]),
+}).superRefine((input, context) => {
+  if (input.expenseType.trim().toLowerCase() === "fuel" && !input.fuelLiters) {
+    context.addIssue({
+      code: "custom",
+      path: ["fuelLiters"],
+      message: "Fuel volume in liters is required for fuel expenses",
+    });
+  }
 });
 
 const maintenanceInput = z.object({
@@ -126,7 +136,7 @@ export const portalRouter = router({
     types: portalProcedure.query(() => listExpenseTypes()),
     createMany: portalProcedure.input(z.object({ records: z.array(expenseInput).min(1).max(10) }))
       .mutation(({ input }) => createExpenses(input.records)),
-    update: portalProcedure.input(expenseInput.extend({ id: z.number().int().positive() }))
+    update: portalProcedure.input(expenseInput.safeExtend({ id: z.number().int().positive() }))
       .mutation(({ input }) => updateExpense(input)),
     delete: portalProcedure.input(z.object({ id: z.number().int().positive() }))
       .mutation(({ input }) => deleteExpense(input.id)),
@@ -142,5 +152,23 @@ export const portalRouter = router({
     })).mutation(({ input }) => updateMaintenance(input)),
     delete: portalProcedure.input(z.object({ expenseId: z.number().int().positive() }))
       .mutation(({ input }) => deleteMaintenance(input.expenseId)),
+  }),
+
+  data: router({
+    sync: portalProcedure.query(async () => {
+      const backup = await createPortalBackup();
+      return {
+        syncedAt: backup.exportedAt,
+        counts: {
+          trucks: backup.data.trucks.length,
+          trips: backup.data.incomeRecords.length,
+          expenses: backup.data.expenses.length,
+          maintenance: backup.data.maintenanceRecords.length,
+        },
+      };
+    }),
+    backup: portalProcedure.query(() => createPortalBackup()),
+    import: portalProcedure.input(z.object({ backup: z.unknown() }))
+      .mutation(({ input }) => importPortalBackup(input.backup)),
   }),
 });

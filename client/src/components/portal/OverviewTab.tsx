@@ -28,7 +28,7 @@ export default function OverviewTab({ trucks, incomes, expenses }: { trucks: Tru
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
-        <Panel>
+        <Panel className="min-w-0 overflow-hidden">
           <div className="flex items-center justify-between border-b border-[#edf0ee] px-5 py-4">
             <div><h2 className="text-sm font-extrabold text-[#24384b]">Recent trip activity</h2><p className="mt-1 text-[10px] text-[#8a949b]">Latest cargo records across the fleet</p></div>
             <span className="rounded-full bg-[#f4f5f2] px-3 py-1.5 text-[9px] font-bold text-[#687681]">{incomes.length} records</span>

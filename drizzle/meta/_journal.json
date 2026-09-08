@@ -15,6 +15,20 @@
       "when": 1788790414634,
       "tag": "0001_steady_swordsman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1788843391723,
+      "tag": "0002_yielding_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1788843637254,
+      "tag": "0003_cold_diamondback",
+      "breakpoints": true
     }
   ]
 }

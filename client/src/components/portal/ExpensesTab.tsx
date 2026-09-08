@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
-import { Download, Eye, FileSpreadsheet, Paperclip, Pencil, Plus, ReceiptText, Trash2, TrendingDown } from "lucide-react";
+import { Download, Droplets, Eye, FileSpreadsheet, Paperclip, Pencil, Plus, ReceiptText, Trash2, TrendingDown } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { DialogActions, EmptyState, MetricCard, PageHeader, Panel, inputClass, primaryButton, secondaryButton } from "./PortalUI";
@@ -14,6 +14,7 @@ type ExpenseDraft = {
   expenseDate: string;
   expenseType: string;
   customType: string;
+  fuelLiters: string;
   description: string;
   amount: string;
   attachments: UploadPayload[];
@@ -27,6 +28,7 @@ const newDraft = (tripReference = ""): ExpenseDraft => ({
   expenseDate: toDateInput(),
   expenseType: "Fuel",
   customType: "",
+  fuelLiters: "",
   description: "",
   amount: "",
   attachments: [],
@@ -53,8 +55,10 @@ export default function ExpensesTab({
 
   const references = Array.from(new Set(incomes.map(item => item.tripReference)));
   const tripTruck = new Map(incomes.map(item => [item.tripReference, item.truck.registrationNumber]));
+  const tripDetails = new Map(incomes.map(item => [item.tripReference, item]));
   const truckById = new Map(trucks.map(truck => [truck.id, truck.registrationNumber]));
   const totalExpenses = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
+  const totalFuelLiters = expenses.reduce((sum, item) => sum + Number(item.fuelLiters ?? 0), 0);
   const expenseTypeOptions = Array.from(new Set([
     ...BASE_TYPES,
     ...(expenseTypesQuery.data ?? []).map(item => item.name),
@@ -107,6 +111,7 @@ export default function ExpensesTab({
       expenseDate: toDateInput(expense.expenseDate),
       expenseType: expense.expenseType,
       customType: "",
+      fuelLiters: expense.fuelLiters ? String(expense.fuelLiters) : "",
       description: expense.description,
       amount: String(expense.amount),
       attachments: [],
@@ -120,16 +125,27 @@ export default function ExpensesTab({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const records = drafts.map(item => ({
-      tripReference: item.tripReference,
-      expenseDate: dateInputToUtc(item.expenseDate),
-      expenseType: item.expenseType === CUSTOM_VALUE ? item.customType.trim() : item.expenseType,
-      description: item.description,
-      amount: Number(item.amount),
-      attachments: item.attachments,
-    }));
-    if (records.some(item => !item.tripReference || !item.expenseType || !item.description || !item.amount)) {
+    const records = drafts.map(item => {
+      const expenseType = item.expenseType === CUSTOM_VALUE ? item.customType.trim() : item.expenseType;
+      const trip = tripDetails.get(item.tripReference);
+      return {
+        tripReference: item.tripReference,
+        truckId: trip?.truck.id,
+        assetType: "truck" as const,
+        expenseDate: dateInputToUtc(item.expenseDate),
+        expenseType,
+        fuelLiters: expenseType.toLowerCase() === "fuel" ? Number(item.fuelLiters) : null,
+        description: item.description,
+        amount: Number(item.amount),
+        attachments: item.attachments,
+      };
+    });
+    if (records.some(item => !item.tripReference || !item.truckId || !item.expenseType || !item.description || !item.amount)) {
       toast.error("Complete every required expense field");
+      return;
+    }
+    if (records.some(item => item.expenseType.toLowerCase() === "fuel" && !item.fuelLiters)) {
+      toast.error("Enter fuel volume in liters for every fuel expense");
       return;
     }
     if (editing) updateExpense.mutate({ id: editing.id, ...records[0] });
@@ -147,7 +163,7 @@ export default function ExpensesTab({
       return expenses.map(item => ({
         key: String(item.id),
         label: item.description,
-        sublabel: `${item.tripReference} · ${item.expenseType} · ${assetLabel(item)}`,
+        sublabel: `${item.tripReference} · ${item.expenseType} · ${assetLabel(item)}${item.fuelLiters ? ` · ${Number(item.fuelLiters).toLocaleString()} L` : ""}`,
         amount: Number(item.amount),
         count: 1,
         source: item,
@@ -183,6 +199,7 @@ export default function ExpensesTab({
     Asset: assetLabel(item),
     Date: shortDate(item.expenseDate),
     Type: item.expenseType,
+    "Fuel Volume (L)": item.fuelLiters ? Number(item.fuelLiters) : "",
     Description: item.description,
     "Amount (TZS)": Number(item.amount),
   }));
@@ -191,10 +208,11 @@ export default function ExpensesTab({
     <div className="page-enter">
       <PageHeader eyebrow="Cost control" title="Expenses" description="Capture trip and maintenance costs in horizontal rows, then review them by trip, truck, trailer, or category." action={<button type="button" onClick={openCreate} className={primaryButton}><Plus className="size-4" />Record expense</button>} />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={TrendingDown} label="Total expenses" value={money(totalExpenses)} detail="Trip, truck, and trailer costs" tone="red" />
         <MetricCard icon={ReceiptText} label="Expense records" value={String(expenses.length)} detail="Including maintenance entries" tone="navy" />
         <MetricCard icon={FileSpreadsheet} label="Average expense" value={money(expenses.length ? totalExpenses / expenses.length : 0)} detail="Average per expense line" tone="orange" />
+        <MetricCard icon={Droplets} label="Fuel volume" value={`${totalFuelLiters.toLocaleString()} L`} detail="Captured for fuel analysis" tone="green" />
       </div>
 
       <Panel className="mt-5 overflow-hidden">
@@ -202,7 +220,7 @@ export default function ExpensesTab({
           <div><h2 className="text-sm font-extrabold text-[#24384b]">Expense report</h2><p className="mt-1 text-[10px] text-[#8a949b]">Maintenance entries are included automatically</p></div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex flex-wrap gap-1 rounded-xl bg-[#f3f5f2] p-1">{(["all", "trip", "truck", "trailer", "type"] as ReportView[]).map(item => <button key={item} type="button" onClick={() => setReportView(item)} className={`rounded-lg px-3 py-2 text-[9px] font-extrabold uppercase transition-colors ${reportView === item ? "bg-white text-[#c9580e] shadow-sm" : "text-[#7a858e]"}`}>{item === "all" ? "All expenses" : `By ${item}`}</button>)}</div>
-            <button type="button" className={secondaryButton} onClick={() => exportPdf("kway-expenses", "K-Way Limited Expense Report", [["Trip", "Asset", "Date", "Type", "Description", "Amount"], ...exportRows.map(row => [row["Trip Reference"], row.Asset, row.Date, row.Type, row.Description, money(row["Amount (TZS)"])])])}><Download className="size-3.5" />PDF</button>
+            <button type="button" className={secondaryButton} onClick={() => exportPdf("kway-expenses", "K-Way Limited Expense Report", [["Trip", "Asset", "Date", "Type", "Liters", "Description", "Amount"], ...exportRows.map(row => [row["Trip Reference"], row.Asset, row.Date, row.Type, String(row["Fuel Volume (L)"]), row.Description, money(row["Amount (TZS)"])])])}><Download className="size-3.5" />PDF</button>
             <button type="button" className={secondaryButton} onClick={() => exportExcel("kway-expenses", "Expenses", exportRows)}><Download className="size-3.5" />Excel</button>
           </div>
         </div>
@@ -213,17 +231,19 @@ export default function ExpensesTab({
       </Panel>
 
       <Dialog open={entryOpen} onOpenChange={setEntryOpen}>
-        <DialogContent className="max-h-[92vh] w-[96vw] !max-w-[96vw] overflow-y-auto rounded-2xl border-[#e1e5e3] bg-[#f9faf7] xl:!max-w-[1400px]">
-          <DialogHeader><DialogTitle className="font-display text-3xl font-bold text-[#15324b] uppercase">{editing ? "Edit expense" : "Record expenses"}</DialogTitle><DialogDescription>Each expense is displayed as one horizontal row. Saved custom types become available in the dropdown for future entries.</DialogDescription></DialogHeader>
+        <DialogContent className="max-h-[92vh] w-[98vw] !max-w-[98vw] overflow-y-auto rounded-2xl border-[#e1e5e3] bg-[#f9faf7] xl:!max-w-[1540px]">
+          <DialogHeader><DialogTitle className="font-display text-3xl font-bold text-[#15324b] uppercase">{editing ? "Edit expense" : "Record expenses"}</DialogTitle><DialogDescription>Selecting a trip automatically allocates the expense to that trip's truck. Fuel rows also capture liters for later GPS mileage analysis.</DialogDescription></DialogHeader>
           <form onSubmit={submit} className="mt-4 space-y-3">
-            <div className="hidden grid-cols-[1.05fr_0.8fr_0.95fr_1.35fr_0.7fr_0.65fr_32px] gap-2 px-3 text-[9px] font-extrabold tracking-[0.1em] text-[#7c878f] uppercase lg:grid">
-              <span>Trip reference</span><span>Date</span><span>Expense type</span><span>Description</span><span>Amount</span><span>Attachment</span><span />
+            <div className="hidden grid-cols-[0.95fr_0.7fr_0.72fr_0.82fr_0.55fr_1.05fr_0.65fr_0.55fr_32px] gap-2 px-3 text-[9px] font-extrabold tracking-[0.1em] text-[#7c878f] uppercase lg:grid">
+              <span>Trip reference</span><span>Truck</span><span>Date</span><span>Expense type</span><span>Liters</span><span>Description</span><span>Amount</span><span>Attachment</span><span />
             </div>
             {drafts.map((draft, index) => (
-              <div key={draft.key} className="grid grid-cols-1 gap-3 rounded-2xl border border-[#e2e6e4] bg-white p-3 lg:grid-cols-[1.05fr_0.8fr_0.95fr_1.35fr_0.7fr_0.65fr_32px] lg:items-start lg:gap-2">
+              <div key={draft.key} className="grid grid-cols-1 gap-3 rounded-2xl border border-[#e2e6e4] bg-white p-3 lg:grid-cols-[0.95fr_0.7fr_0.72fr_0.82fr_0.55fr_1.05fr_0.65fr_0.55fr_32px] lg:items-start lg:gap-2">
                 <RowField label="Trip reference"><select required className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.tripReference} onChange={event => updateDraft(draft.key, { tripReference: event.target.value })}><option value="" disabled>Select trip</option>{references.map(reference => <option key={reference} value={reference}>{reference}</option>)}</select></RowField>
+                <RowField label="Truck"><div className="flex h-10 items-center rounded-xl border border-[#dfe4e2] bg-[#f4f6f3] px-2.5 text-xs font-extrabold text-[#284055]">{tripDetails.get(draft.tripReference)?.truck.registrationNumber ?? "—"}</div></RowField>
                 <RowField label="Date"><input required type="date" className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.expenseDate} onChange={event => updateDraft(draft.key, { expenseDate: event.target.value })} /></RowField>
                 <RowField label="Expense type"><select className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.expenseType} onChange={event => updateDraft(draft.key, { expenseType: event.target.value, customType: "" })}>{expenseTypeOptions.map(type => <option key={type} value={type}>{type}</option>)}<option value={CUSTOM_VALUE}>+ Add custom type</option></select>{draft.expenseType === CUSTOM_VALUE ? <input required autoFocus className={`${inputClass} mt-2 h-9 px-2.5 text-xs`} value={draft.customType} onChange={event => updateDraft(draft.key, { customType: event.target.value })} placeholder="Custom type name" /> : null}</RowField>
+                <RowField label="Liters">{(draft.expenseType === CUSTOM_VALUE ? draft.customType : draft.expenseType).trim().toLowerCase() === "fuel" ? <input required min="0.01" step="0.01" type="number" className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.fuelLiters} onChange={event => updateDraft(draft.key, { fuelLiters: event.target.value })} placeholder="Liters" /> : <div className="flex h-10 items-center rounded-xl border border-[#e7eae8] bg-[#f7f8f5] px-2.5 text-xs text-[#9aa2a7]">—</div>}</RowField>
                 <RowField label="Description"><input required className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.description} onChange={event => updateDraft(draft.key, { description: event.target.value })} placeholder="Expense description" /></RowField>
                 <RowField label="Amount"><input required min="1" step="0.01" type="number" className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.amount} onChange={event => updateDraft(draft.key, { amount: event.target.value })} placeholder="TZS" /></RowField>
                 <RowField label="Attachment"><label className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#cfd6d3] bg-[#fafbf9] px-2 text-[9px] font-bold text-[#566673] hover:border-[#e87927]"><Paperclip className="size-3.5 text-[#d66214]" />{draft.attachments.length ? `${draft.attachments.length} file${draft.attachments.length === 1 ? "" : "s"}` : "Add files"}<input type="file" multiple className="sr-only" onChange={async event => event.target.files && updateDraft(draft.key, { attachments: await filesToPayload(event.target.files) })} /></label></RowField>
@@ -239,7 +259,7 @@ export default function ExpensesTab({
       <Dialog open={Boolean(viewing)} onOpenChange={open => !open && setViewing(null)}>
         <DialogContent className="max-w-lg rounded-2xl border-[#e1e5e3] bg-[#f9faf7]">
           <DialogHeader><DialogTitle className="font-display text-3xl font-bold text-[#15324b] uppercase">Expense detail</DialogTitle><DialogDescription>{viewing?.tripReference}</DialogDescription></DialogHeader>
-          {viewing ? <div className="mt-3 grid grid-cols-2 gap-3 text-xs"><Detail label="Date" value={shortDate(viewing.expenseDate)} /><Detail label="Type" value={viewing.expenseType} /><Detail label="Asset" value={assetLabel(viewing)} /><Detail label="Amount" value={money(viewing.amount)} /><div className="col-span-2"><Detail label="Description" value={viewing.description} /></div><div className="col-span-2"><p className="mb-2 text-[9px] font-extrabold tracking-[0.1em] text-[#8b959c] uppercase">Attachments</p>{viewing.attachments.length ? <div className="space-y-2">{viewing.attachments.map(file => <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-[#e1e5e3] bg-white p-3 font-bold text-[#c9580e]"><Paperclip className="size-3.5" />{file.fileName}</a>)}</div> : <p className="text-[#7a858e]">No attachments</p>}</div></div> : null}
+          {viewing ? <div className="mt-3 grid grid-cols-2 gap-3 text-xs"><Detail label="Date" value={shortDate(viewing.expenseDate)} /><Detail label="Type" value={viewing.expenseType} /><Detail label="Truck / asset" value={assetLabel(viewing)} /><Detail label="Amount" value={money(viewing.amount)} />{viewing.fuelLiters ? <Detail label="Fuel volume" value={`${Number(viewing.fuelLiters).toLocaleString()} liters`} /> : null}<div className="col-span-2"><Detail label="Description" value={viewing.description} /></div><div className="col-span-2"><p className="mb-2 text-[9px] font-extrabold tracking-[0.1em] text-[#8b959c] uppercase">Attachments</p>{viewing.attachments.length ? <div className="space-y-2">{viewing.attachments.map(file => <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl border border-[#e1e5e3] bg-white p-3 font-bold text-[#c9580e]"><Paperclip className="size-3.5" />{file.fileName}</a>)}</div> : <p className="text-[#7a858e]">No attachments</p>}</div></div> : null}
         </DialogContent>
       </Dialog>
     </div>

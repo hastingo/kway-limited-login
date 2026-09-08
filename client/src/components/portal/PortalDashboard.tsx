@@ -2,11 +2,13 @@ import DashboardLayout, { type PortalTab } from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
+import DataControls from "./DataControls";
 import ExpensesTab from "./ExpensesTab";
 import IncomeTab from "./IncomeTab";
 import MaintenanceTab from "./MaintenanceTab";
 import OverviewTab from "./OverviewTab";
 import ReportsTab from "./ReportsTab";
+import TrackingTab from "./TrackingTab";
 import TrucksTab from "./TrucksTab";
 
 export default function PortalDashboard() {
@@ -33,8 +35,10 @@ export default function PortalDashboard() {
     switch (activeTab) {
       case "trucks":
         return <TrucksTab trucks={trucks} isLoading={trucksQuery.isLoading} />;
+      case "tracking":
+        return <TrackingTab incomes={incomes} expenses={expenses} trucks={trucks} />;
       case "income":
-        return <IncomeTab incomes={incomes} trucks={trucks} isLoading={incomeQuery.isLoading} />;
+        return <IncomeTab incomes={incomes} trucks={trucks} expenses={expenses} isLoading={incomeQuery.isLoading} />;
       case "expenses":
         return <ExpensesTab expenses={expenses} incomes={incomes} trucks={trucks} isLoading={expenseQuery.isLoading} />;
       case "maintenance":
@@ -49,7 +53,7 @@ export default function PortalDashboard() {
   const hasError = trucksQuery.error || incomeQuery.error || expenseQuery.error || maintenanceQuery.error;
 
   return (
-    <DashboardLayout activeTab={activeTab} onNavigate={setActiveTab} onLogout={() => logout.mutate()} alertCount={alertCount}>
+    <DashboardLayout activeTab={activeTab} onNavigate={setActiveTab} onLogout={() => logout.mutate()} alertCount={alertCount} dataActions={<DataControls />}>
       {hasError ? (
         <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700">
           Some portal data could not be loaded. Refresh the page or try again shortly.

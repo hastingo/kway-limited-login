@@ -164,16 +164,18 @@ export async function createIncome(input: {
     throw new Error("Return cargo requires an existing trip reference");
   }
 
+  let truckId = input.truckId;
   if (input.cargoType === "return") {
-    const existing = await db.select({ id: incomeRecords.id }).from(incomeRecords)
+    const existing = await db.select({ id: incomeRecords.id, truckId: incomeRecords.truckId }).from(incomeRecords)
       .where(eq(incomeRecords.tripReference, selectedReference!)).limit(1);
     if (existing.length === 0) throw new Error("Selected trip reference does not exist");
+    truckId = existing[0].truckId;
   }
 
   const [created] = await db.insert(incomeRecords).values({
     cargoType: input.cargoType,
     tripReference: input.cargoType === "going" ? "TRIP-PENDING" : selectedReference!,
-    truckId: input.truckId,
+    truckId,
     dateOfLoading: input.dateOfLoading,
     customerName: input.customerName.trim(),
     containerNumber: input.containerNumber.trim().toUpperCase(),
@@ -258,6 +260,7 @@ export async function createExpenses(inputs: Array<{
   assetType?: "truck" | "trailer" | null;
   expenseDate: number;
   expenseType: string;
+  fuelLiters?: number | null;
   description: string;
   amount: number;
   attachments: UploadInput[];
@@ -266,6 +269,9 @@ export async function createExpenses(inputs: Array<{
   const createdIds: number[] = [];
   for (const input of inputs) {
     const truckId = await resolveExpenseTruckId(input.tripReference, input.truckId);
+    if (!truckId && input.tripReference !== "MAINTENANCE") {
+      throw new Error(`No truck is assigned to ${input.tripReference}`);
+    }
     await rememberExpenseType(input.expenseType);
     const [created] = await db.insert(expenses).values({
       tripReference: input.tripReference,
@@ -273,6 +279,9 @@ export async function createExpenses(inputs: Array<{
       assetType: input.assetType ?? null,
       expenseDate: input.expenseDate,
       expenseType: input.expenseType.trim(),
+      fuelLiters: input.expenseType.trim().toLowerCase() === "fuel" && input.fuelLiters
+        ? input.fuelLiters.toFixed(2)
+        : null,
       description: input.description.trim(),
       amount: input.amount.toFixed(2),
     }).$returningId();
@@ -292,12 +301,16 @@ export async function updateExpense(input: {
   assetType?: "truck" | "trailer" | null;
   expenseDate: number;
   expenseType: string;
+  fuelLiters?: number | null;
   description: string;
   amount: number;
   attachments: UploadInput[];
 }) {
   const db = await requireDb();
   const truckId = await resolveExpenseTruckId(input.tripReference, input.truckId);
+  if (!truckId && input.tripReference !== "MAINTENANCE") {
+    throw new Error(`No truck is assigned to ${input.tripReference}`);
+  }
   await rememberExpenseType(input.expenseType);
   await db.update(expenses).set({
     tripReference: input.tripReference,
@@ -305,6 +318,9 @@ export async function updateExpense(input: {
     assetType: input.assetType ?? null,
     expenseDate: input.expenseDate,
     expenseType: input.expenseType.trim(),
+    fuelLiters: input.expenseType.trim().toLowerCase() === "fuel" && input.fuelLiters
+      ? input.fuelLiters.toFixed(2)
+      : null,
     description: input.description.trim(),
     amount: input.amount.toFixed(2),
   }).where(eq(expenses.id, input.id));

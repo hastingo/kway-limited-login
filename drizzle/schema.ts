@@ -66,6 +66,8 @@ export const incomeRecords = mysqlTable("incomeRecords", {
   description: text("description"),
   status: mysqlEnum("status", ["active", "ended"]).default("active").notNull(),
   returnedAt: bigint("returnedAt", { mode: "number" }),
+  trackedDistanceKm: decimal("trackedDistanceKm", { precision: 12, scale: 2 }),
+  trackingSyncedAt: bigint("trackingSyncedAt", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -87,6 +89,7 @@ export const expenses = mysqlTable("expenses", {
   assetType: mysqlEnum("assetType", ["truck", "trailer"]),
   expenseDate: bigint("expenseDate", { mode: "number" }).notNull(),
   expenseType: varchar("expenseType", { length: 120 }).notNull(),
+  fuelLiters: decimal("fuelLiters", { precision: 10, scale: 2 }),
   description: text("description").notNull(),
   amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

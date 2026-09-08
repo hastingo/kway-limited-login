@@ -25,6 +25,7 @@ import {
   CircleDollarSign,
   LayoutDashboard,
   LogOut,
+  MapPinned,
   PanelLeft,
   ReceiptText,
   Truck,
@@ -33,11 +34,12 @@ import {
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
-export type PortalTab = "dashboard" | "trucks" | "income" | "expenses" | "maintenance" | "reports";
+export type PortalTab = "dashboard" | "trucks" | "tracking" | "income" | "expenses" | "maintenance" | "reports";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" as const },
   { icon: Truck, label: "Trucks", id: "trucks" as const },
+  { icon: MapPinned, label: "Truck Tracking", id: "tracking" as const },
   { icon: WalletCards, label: "Income", id: "income" as const },
   { icon: ReceiptText, label: "Expenses", id: "expenses" as const },
   { icon: Wrench, label: "Maintenance", id: "maintenance" as const },
@@ -50,16 +52,18 @@ export default function DashboardLayout({
   onNavigate,
   onLogout,
   alertCount,
+  dataActions,
 }: {
   children: ReactNode;
   activeTab: PortalTab;
   onNavigate: (tab: PortalTab) => void;
   onLogout: () => void;
   alertCount: number;
+  dataActions?: ReactNode;
 }) {
   return (
     <SidebarProvider style={{ "--sidebar-width": "254px" } as CSSProperties}>
-      <DashboardLayoutContent activeTab={activeTab} onNavigate={onNavigate} onLogout={onLogout} alertCount={alertCount}>
+      <DashboardLayoutContent activeTab={activeTab} onNavigate={onNavigate} onLogout={onLogout} alertCount={alertCount} dataActions={dataActions}>
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
@@ -72,12 +76,14 @@ function DashboardLayoutContent({
   onNavigate,
   onLogout,
   alertCount,
+  dataActions,
 }: {
   children: ReactNode;
   activeTab: PortalTab;
   onNavigate: (tab: PortalTab) => void;
   onLogout: () => void;
   alertCount: number;
+  dataActions?: ReactNode;
 }) {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -168,6 +174,7 @@ function DashboardLayoutContent({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {dataActions}
             <button type="button" onClick={() => onNavigate("income")} className="hidden h-9 items-center gap-2 rounded-xl border border-[#dfe4e2] bg-white px-3 text-[10px] font-extrabold text-[#425466] shadow-sm transition-colors hover:text-[#c9580e] sm:flex">
               <CircleDollarSign className="size-4 text-[#d66214]" />Record income
             </button>
