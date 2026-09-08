@@ -10,6 +10,7 @@ import {
   setPortalSessionCookie,
   validateTemporaryCredentials,
 } from "./portalAuth";
+import { CartrackApiError, getCartrackFleetStatus, syncCartrackTripDistances } from "./cartrack";
 import { createPortalBackup, importPortalBackup } from "./portalBackup";
 import {
   addTruckDocument,
@@ -152,6 +153,44 @@ export const portalRouter = router({
     })).mutation(({ input }) => updateMaintenance(input)),
     delete: portalProcedure.input(z.object({ expenseId: z.number().int().positive() }))
       .mutation(({ input }) => deleteMaintenance(input.expenseId)),
+  }),
+
+  tracking: router({
+    status: portalProcedure.query(async () => {
+      try {
+        return {
+          provider: "Cartrack Tanzania" as const,
+          portalUrl: "https://fleetweb-tz.cartrack.com/map/fleet",
+          fetchedAt: Date.now(),
+          vehicles: await getCartrackFleetStatus(),
+        };
+      } catch (error) {
+        if (error instanceof CartrackApiError) {
+          throw new TRPCError({
+            code: error.status === 401 ? "UNAUTHORIZED" : "INTERNAL_SERVER_ERROR",
+            message: error.status === 401
+              ? "Cartrack rejected the configured API credential"
+              : `Cartrack connection failed: ${error.message}`,
+          });
+        }
+        throw error;
+      }
+    }),
+    sync: portalProcedure.mutation(async () => {
+      try {
+        return await syncCartrackTripDistances();
+      } catch (error) {
+        if (error instanceof CartrackApiError) {
+          throw new TRPCError({
+            code: error.status === 401 ? "UNAUTHORIZED" : "INTERNAL_SERVER_ERROR",
+            message: error.status === 401
+              ? "Cartrack rejected the configured API credential"
+              : `Cartrack synchronization failed: ${error.message}`,
+          });
+        }
+        throw error;
+      }
+    }),
   }),
 
   data: router({

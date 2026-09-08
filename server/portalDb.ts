@@ -207,6 +207,55 @@ export async function setTripStatus(tripReference: string, status: "active" | "e
   return { success: true as const };
 }
 
+export async function listTripTrackingTargets() {
+  const db = await requireDb();
+  const rows = await db
+    .select({ income: incomeRecords, truck: trucks })
+    .from(incomeRecords)
+    .innerJoin(trucks, eq(incomeRecords.truckId, trucks.id))
+    .orderBy(incomeRecords.dateOfLoading, incomeRecords.id);
+
+  const grouped = new Map<string, {
+    tripReference: string;
+    registrationNumber: string;
+    dateOfLoading: number;
+    returnedAt: number | null;
+    status: "active" | "ended";
+  }>();
+  for (const row of rows) {
+    const existing = grouped.get(row.income.tripReference);
+    if (!existing) {
+      grouped.set(row.income.tripReference, {
+        tripReference: row.income.tripReference,
+        registrationNumber: row.truck.registrationNumber,
+        dateOfLoading: row.income.dateOfLoading,
+        returnedAt: row.income.returnedAt,
+        status: row.income.status,
+      });
+      continue;
+    }
+    existing.dateOfLoading = Math.min(existing.dateOfLoading, row.income.dateOfLoading);
+    if (row.income.returnedAt) {
+      existing.returnedAt = Math.max(existing.returnedAt ?? 0, row.income.returnedAt);
+    }
+    if (row.income.status === "active") existing.status = "active";
+  }
+  return Array.from(grouped.values());
+}
+
+export async function updateTripTrackingDistance(
+  tripReference: string,
+  distanceKm: number,
+  trackingSyncedAt: number,
+) {
+  const db = await requireDb();
+  await db.update(incomeRecords).set({
+    trackedDistanceKm: distanceKm.toFixed(2),
+    trackingSyncedAt,
+  }).where(eq(incomeRecords.tripReference, tripReference));
+  return { success: true as const };
+}
+
 export async function deleteTrip(tripReference: string) {
   const db = await requireDb();
   const existing = await db.select({ id: incomeRecords.id }).from(incomeRecords)
