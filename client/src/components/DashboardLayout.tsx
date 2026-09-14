@@ -23,6 +23,7 @@ import {
   BarChart3,
   Bell,
   CircleDollarSign,
+  FileText,
   LayoutDashboard,
   LogOut,
   MapPinned,
@@ -34,7 +35,7 @@ import {
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
-export type PortalTab = "dashboard" | "trucks" | "tracking" | "income" | "expenses" | "maintenance" | "reports";
+export type PortalTab = "dashboard" | "trucks" | "tracking" | "income" | "expenses" | "maintenance" | "invoices" | "reports";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" as const },
@@ -43,6 +44,7 @@ const menuItems = [
   { icon: WalletCards, label: "Income", id: "income" as const },
   { icon: ReceiptText, label: "Expenses", id: "expenses" as const },
   { icon: Wrench, label: "Maintenance", id: "maintenance" as const },
+  { icon: FileText, label: "Invoices", id: "invoices" as const },
   { icon: BarChart3, label: "Profit & Loss", id: "reports" as const },
 ];
 
@@ -85,10 +87,14 @@ function DashboardLayoutContent({
   alertCount: number;
   dataActions?: ReactNode;
 }) {
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, setOpenMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
   const isMobile = useIsMobile();
   const activeLabel = menuItems.find(item => item.id === activeTab)?.label ?? "Dashboard";
+  const handleNavigate = (tab: PortalTab) => {
+    onNavigate(tab);
+    if (isMobile) setOpenMobile(false);
+  };
 
   return (
     <>
@@ -121,7 +127,7 @@ function DashboardLayoutContent({
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton
                     isActive={isActive}
-                    onClick={() => onNavigate(item.id)}
+                    onClick={() => handleNavigate(item.id)}
                     tooltip={item.label}
                     className={`h-11 rounded-xl border-0 px-3 text-xs font-bold transition-all ${isActive ? "bg-[#ff8c35] text-[#0c2033] shadow-[0_10px_24px_rgba(0,0,0,0.18)] hover:bg-[#ff9a4b]" : "text-white/60 hover:bg-white/7 hover:text-white"}`}
                   >
@@ -136,7 +142,7 @@ function DashboardLayoutContent({
 
         <SidebarFooter className="border-t border-white/8 bg-[#0c2033] p-3">
           {!isCollapsed && alertCount > 0 ? (
-            <button type="button" onClick={() => onNavigate("trucks")} className="mb-3 flex w-full items-start gap-3 rounded-xl border border-amber-400/15 bg-amber-400/8 p-3 text-left">
+            <button type="button" onClick={() => handleNavigate("trucks")} className="mb-3 flex w-full items-start gap-3 rounded-xl border border-amber-400/15 bg-amber-400/8 p-3 text-left">
               <Bell className="mt-0.5 size-4 shrink-0 text-[#ff9a4b]" />
               <span><span className="block text-[10px] font-extrabold text-white">{alertCount} document alert{alertCount === 1 ? "" : "s"}</span><span className="mt-1 block text-[9px] leading-4 text-white/45">Expiry within 14 days</span></span>
             </button>

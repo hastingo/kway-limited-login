@@ -14,17 +14,20 @@ import { CartrackApiError, getCartrackFleetStatus, syncCartrackTripDistances } f
 import { createPortalBackup, importPortalBackup } from "./portalBackup";
 import {
   addTruckDocument,
+  createInvoice,
   createExpenses,
   createIncome,
   createMaintenance,
   createTruck,
   deleteExpense,
+  deleteInvoice,
   deleteMaintenance,
   deleteTrip,
   deleteTruckDocument,
   listExpenses,
   listExpenseTypes,
   listIncome,
+  listInvoices,
   listMaintenance,
   listTrucks,
   setTripStatus,
@@ -48,7 +51,6 @@ const truckInput = z.object({
 
 export const expenseInput = z.object({
   tripReference: z.string().min(1).max(80),
-  truckId: z.number().int().positive().nullable().optional(),
   assetType: z.enum(["truck", "trailer"]).nullable().optional(),
   expenseDate: z.number().int().positive(),
   expenseType: z.string().min(2).max(120),
@@ -77,6 +79,20 @@ const maintenanceInput = z.object({
   odometerKm: z.number().int().nonnegative().optional(),
   nextServiceDate: z.number().int().positive().optional(),
   attachments: z.array(uploadSchema).max(5).default([]),
+});
+
+const invoiceInput = z.object({
+  customerName: z.string().min(2).max(200),
+  customerTin: z.string().min(2).max(80),
+  customerVrn: z.string().min(2).max(80),
+  containerNumber: z.string().max(200).optional(),
+  bankDetails: z.string().min(3).max(3000),
+  notes: z.string().max(2000).optional(),
+  items: z.array(z.object({
+    description: z.string().min(2).max(2000),
+    numberOfTrucks: z.number().int().positive().max(1000),
+    unitPrice: z.number().positive().max(100_000_000),
+  })).min(1).max(30),
 });
 
 export const portalRouter = router({
@@ -155,6 +171,18 @@ export const portalRouter = router({
       .mutation(({ input }) => deleteMaintenance(input.expenseId)),
   }),
 
+  invoices: router({
+    info: portalProcedure.query(() => ({
+      companyName: "K-WAY LIMITED",
+      tin: "180-047-603",
+      currency: "USD" as const,
+    })),
+    list: portalProcedure.query(() => listInvoices()),
+    create: portalProcedure.input(invoiceInput).mutation(({ input }) => createInvoice(input)),
+    delete: portalProcedure.input(z.object({ id: z.number().int().positive() }))
+      .mutation(({ input }) => deleteInvoice(input.id)),
+  }),
+
   tracking: router({
     status: portalProcedure.query(async () => {
       try {
@@ -203,6 +231,7 @@ export const portalRouter = router({
           trips: backup.data.incomeRecords.length,
           expenses: backup.data.expenses.length,
           maintenance: backup.data.maintenanceRecords.length,
+          invoices: backup.data.invoices.length,
         },
       };
     }),

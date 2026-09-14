@@ -18,6 +18,7 @@ export default function DataControls() {
       utils.portal.expenses.list.invalidate(),
       utils.portal.expenses.types.invalidate(),
       utils.portal.maintenance.list.invalidate(),
+      utils.portal.invoices.list.invalidate(),
     ]);
   };
 
@@ -43,7 +44,7 @@ export default function DataControls() {
       const counts = result.data?.counts;
       toast.success("Data synchronized", {
         description: counts
-          ? `${counts.trucks} trucks · ${counts.trips} cargo records · ${counts.expenses} expenses`
+          ? `${counts.trucks} trucks · ${counts.trips} cargo records · ${counts.expenses} expenses · ${counts.invoices} invoices`
           : "The latest portal data is now displayed.",
       });
     } catch (error) {

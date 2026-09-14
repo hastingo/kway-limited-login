@@ -5,6 +5,8 @@ import {
   expenses,
   incomeAttachments,
   incomeRecords,
+  invoiceItems,
+  invoices,
   maintenanceRecords,
   truckDocuments,
   trucks,
@@ -271,7 +273,11 @@ export async function deleteTrip(tripReference: string) {
 
 export async function listExpenses() {
   const db = await requireDb();
-  const rows = await db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.id));
+  const rows = await db
+    .select({ expense: expenses, truck: trucks })
+    .from(expenses)
+    .leftJoin(trucks, eq(expenses.truckId, trucks.id))
+    .orderBy(desc(expenses.expenseDate), desc(expenses.id));
   const attachments = await db.select().from(expenseAttachments).orderBy(desc(expenseAttachments.createdAt));
   const byExpense = new Map<number, (typeof expenseAttachments.$inferSelect)[]>();
   for (const attachment of attachments) {
@@ -279,7 +285,11 @@ export async function listExpenses() {
     list.push(attachment);
     byExpense.set(attachment.expenseId, list);
   }
-  return rows.map(row => ({ ...row, attachments: byExpense.get(row.id) ?? [] }));
+  return rows.map(row => ({
+    ...row.expense,
+    truck: row.truck,
+    attachments: byExpense.get(row.expense.id) ?? [],
+  }));
 }
 
 export async function listExpenseTypes() {
@@ -295,8 +305,7 @@ async function rememberExpenseType(name: string) {
   });
 }
 
-async function resolveExpenseTruckId(tripReference: string, explicitTruckId?: number | null) {
-  if (explicitTruckId) return explicitTruckId;
+export async function resolveExpenseTruckId(tripReference: string) {
   const db = await requireDb();
   const [linked] = await db.select({ truckId: incomeRecords.truckId }).from(incomeRecords)
     .where(eq(incomeRecords.tripReference, tripReference)).limit(1);
@@ -305,7 +314,6 @@ async function resolveExpenseTruckId(tripReference: string, explicitTruckId?: nu
 
 export async function createExpenses(inputs: Array<{
   tripReference: string;
-  truckId?: number | null;
   assetType?: "truck" | "trailer" | null;
   expenseDate: number;
   expenseType: string;
@@ -317,8 +325,8 @@ export async function createExpenses(inputs: Array<{
   const db = await requireDb();
   const createdIds: number[] = [];
   for (const input of inputs) {
-    const truckId = await resolveExpenseTruckId(input.tripReference, input.truckId);
-    if (!truckId && input.tripReference !== "MAINTENANCE") {
+    const truckId = await resolveExpenseTruckId(input.tripReference);
+    if (!truckId) {
       throw new Error(`No truck is assigned to ${input.tripReference}`);
     }
     await rememberExpenseType(input.expenseType);
@@ -346,7 +354,6 @@ export async function createExpenses(inputs: Array<{
 export async function updateExpense(input: {
   id: number;
   tripReference: string;
-  truckId?: number | null;
   assetType?: "truck" | "trailer" | null;
   expenseDate: number;
   expenseType: string;
@@ -356,8 +363,8 @@ export async function updateExpense(input: {
   attachments: UploadInput[];
 }) {
   const db = await requireDb();
-  const truckId = await resolveExpenseTruckId(input.tripReference, input.truckId);
-  if (!truckId && input.tripReference !== "MAINTENANCE") {
+  const truckId = await resolveExpenseTruckId(input.tripReference);
+  if (!truckId) {
     throw new Error(`No truck is assigned to ${input.tripReference}`);
   }
   await rememberExpenseType(input.expenseType);
@@ -486,4 +493,84 @@ export async function updateMaintenance(input: {
 
 export async function deleteMaintenance(expenseId: number) {
   return deleteExpense(expenseId);
+}
+
+export function formatInvoiceNumber(invoiceId: number, invoiceDate = Date.now()) {
+  const year = new Date(invoiceDate).getUTCFullYear();
+  return `KWL-INV-${year}-${String(invoiceId).padStart(4, "0")}`;
+}
+
+export function calculateInvoiceLineTotal(numberOfTrucks: number, unitPrice: number) {
+  return Number((numberOfTrucks * unitPrice).toFixed(2));
+}
+
+export async function listInvoices() {
+  const db = await requireDb();
+  const rows = await db
+    .select({ invoice: invoices, item: invoiceItems })
+    .from(invoices)
+    .leftJoin(invoiceItems, eq(invoices.id, invoiceItems.invoiceId))
+    .orderBy(desc(invoices.invoiceDate), desc(invoices.id), invoiceItems.id);
+  const grouped = new Map<number, typeof invoices.$inferSelect & {
+    items: (typeof invoiceItems.$inferSelect)[];
+    totalAmount: number;
+  }>();
+  for (const row of rows) {
+    if (!grouped.has(row.invoice.id)) {
+      grouped.set(row.invoice.id, { ...row.invoice, items: [], totalAmount: 0 });
+    }
+    if (row.item) {
+      const current = grouped.get(row.invoice.id)!;
+      current.items.push(row.item);
+      current.totalAmount += Number(row.item.totalPrice);
+    }
+  }
+  return Array.from(grouped.values());
+}
+
+export async function createInvoice(input: {
+  customerName: string;
+  customerTin: string;
+  customerVrn: string;
+  containerNumber?: string;
+  bankDetails: string;
+  notes?: string;
+  items: Array<{
+    description: string;
+    numberOfTrucks: number;
+    unitPrice: number;
+  }>;
+}) {
+  const db = await requireDb();
+  const invoiceDate = Date.now();
+  return db.transaction(async transaction => {
+    const pendingNumber = `PENDING-${invoiceDate}-${Math.random().toString(36).slice(2, 10)}`;
+    const [created] = await transaction.insert(invoices).values({
+      invoiceNumber: pendingNumber,
+      invoiceDate,
+      customerName: input.customerName.trim(),
+      customerTin: input.customerTin.trim(),
+      customerVrn: input.customerVrn.trim(),
+      containerNumber: input.containerNumber?.trim().toUpperCase() || null,
+      currency: "USD",
+      bankDetails: input.bankDetails.trim(),
+      notes: input.notes?.trim() || null,
+    }).$returningId();
+    const invoiceNumber = formatInvoiceNumber(created.id, invoiceDate);
+    await transaction.update(invoices).set({ invoiceNumber }).where(eq(invoices.id, created.id));
+    await transaction.insert(invoiceItems).values(input.items.map(item => ({
+      invoiceId: created.id,
+      description: item.description.trim(),
+      numberOfTrucks: item.numberOfTrucks,
+      unitPrice: item.unitPrice.toFixed(2),
+      totalPrice: calculateInvoiceLineTotal(item.numberOfTrucks, item.unitPrice).toFixed(2),
+    })));
+    return { id: created.id, invoiceNumber, invoiceDate };
+  });
+}
+
+export async function deleteInvoice(id: number) {
+  const db = await requireDb();
+  await db.delete(invoices).where(eq(invoices.id, id));
+  return { success: true as const };
 }

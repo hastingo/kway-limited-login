@@ -52,11 +52,14 @@ export default function ExpensesTab({
   const [viewing, setViewing] = useState<ExpenseRecord | null>(null);
   const [drafts, setDrafts] = useState<ExpenseDraft[]>([newDraft()]);
   const [reportView, setReportView] = useState<ReportView>("all");
+  const [truckFilter, setTruckFilter] = useState("all");
 
   const references = Array.from(new Set(incomes.map(item => item.tripReference)));
-  const tripTruck = new Map(incomes.map(item => [item.tripReference, item.truck.registrationNumber]));
-  const tripDetails = new Map(incomes.map(item => [item.tripReference, item]));
-  const truckById = new Map(trucks.map(truck => [truck.id, truck.registrationNumber]));
+  const tripDetails = new Map<string, IncomeRecord>();
+  incomes.forEach(item => {
+    const current = tripDetails.get(item.tripReference);
+    if (!current || item.cargoType === "going") tripDetails.set(item.tripReference, item);
+  });
   const totalExpenses = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
   const totalFuelLiters = expenses.reduce((sum, item) => sum + Number(item.fuelLiters ?? 0), 0);
   const expenseTypeOptions = Array.from(new Set([
@@ -127,10 +130,8 @@ export default function ExpensesTab({
     event.preventDefault();
     const records = drafts.map(item => {
       const expenseType = item.expenseType === CUSTOM_VALUE ? item.customType.trim() : item.expenseType;
-      const trip = tripDetails.get(item.tripReference);
       return {
         tripReference: item.tripReference,
-        truckId: trip?.truck.id,
         assetType: "truck" as const,
         expenseDate: dateInputToUtc(item.expenseDate),
         expenseType,
@@ -140,7 +141,7 @@ export default function ExpensesTab({
         attachments: item.attachments,
       };
     });
-    if (records.some(item => !item.tripReference || !item.truckId || !item.expenseType || !item.description || !item.amount)) {
+    if (records.some(item => !item.tripReference || !tripDetails.has(item.tripReference) || !item.expenseType || !item.description || !item.amount)) {
       toast.error("Complete every required expense field");
       return;
     }
@@ -153,14 +154,17 @@ export default function ExpensesTab({
   };
 
   const assetLabel = (item: ExpenseRecord) => {
-    const registration = item.truckId ? truckById.get(item.truckId) : tripTruck.get(item.tripReference);
+    const registration = item.truck?.registrationNumber ?? tripDetails.get(item.tripReference)?.truck.registrationNumber;
     if (!registration) return "Unassigned";
     return item.assetType === "trailer" ? `${registration} trailer` : registration;
   };
 
   const groupedRows = useMemo(() => {
+    const filteredByTruck = truckFilter === "all"
+      ? expenses
+      : expenses.filter(item => String(item.truckId ?? tripDetails.get(item.tripReference)?.truck.id ?? "") === truckFilter);
     if (reportView === "all") {
-      return expenses.map(item => ({
+      return filteredByTruck.map(item => ({
         key: String(item.id),
         label: item.description,
         sublabel: `${item.tripReference} · ${item.expenseType} · ${assetLabel(item)}${item.fuelLiters ? ` · ${Number(item.fuelLiters).toLocaleString()} L` : ""}`,
@@ -170,10 +174,10 @@ export default function ExpensesTab({
       }));
     }
     const filtered = reportView === "trailer"
-      ? expenses.filter(item => item.assetType === "trailer")
+      ? filteredByTruck.filter(item => item.assetType === "trailer")
       : reportView === "truck"
-        ? expenses.filter(item => item.assetType !== "trailer")
-        : expenses;
+        ? filteredByTruck.filter(item => item.assetType !== "trailer")
+        : filteredByTruck;
     const grouped = new Map<string, { amount: number; count: number }>();
     filtered.forEach(item => {
       const key = reportView === "trip"
@@ -184,7 +188,7 @@ export default function ExpensesTab({
       const current = grouped.get(key) ?? { amount: 0, count: 0 };
       grouped.set(key, { amount: current.amount + Number(item.amount), count: current.count + 1 });
     });
-    return Array.from(grouped.entries()).map(([key, value]) => ({
+    return Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => ({
       key,
       label: key,
       sublabel: `${value.count} expense record${value.count === 1 ? "" : "s"}`,
@@ -192,7 +196,7 @@ export default function ExpensesTab({
       count: value.count,
       source: null,
     }));
-  }, [expenses, reportView, truckById, tripTruck]);
+  }, [expenses, reportView, truckFilter, tripDetails]);
 
   const exportRows = expenses.map(item => ({
     "Trip Reference": item.tripReference,
@@ -219,6 +223,10 @@ export default function ExpensesTab({
         <div className="flex flex-col gap-4 border-b border-[#edf0ee] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div><h2 className="text-sm font-extrabold text-[#24384b]">Expense report</h2><p className="mt-1 text-[10px] text-[#8a949b]">Maintenance entries are included automatically</p></div>
           <div className="flex flex-wrap items-center gap-2">
+            <select value={truckFilter} onChange={event => setTruckFilter(event.target.value)} className="h-10 rounded-xl border border-[#dde2e1] bg-white px-3 text-[10px] font-extrabold text-[#425466] outline-none focus:border-[#e87927]">
+              <option value="all">All trucks</option>
+              {trucks.map(truck => <option key={truck.id} value={String(truck.id)}>{truck.registrationNumber} · {truck.model}</option>)}
+            </select>
             <div className="flex flex-wrap gap-1 rounded-xl bg-[#f3f5f2] p-1">{(["all", "trip", "truck", "trailer", "type"] as ReportView[]).map(item => <button key={item} type="button" onClick={() => setReportView(item)} className={`rounded-lg px-3 py-2 text-[9px] font-extrabold uppercase transition-colors ${reportView === item ? "bg-white text-[#c9580e] shadow-sm" : "text-[#7a858e]"}`}>{item === "all" ? "All expenses" : `By ${item}`}</button>)}</div>
             <button type="button" className={secondaryButton} onClick={() => exportPdf("kway-expenses", "K-Way Limited Expense Report", [["Trip", "Asset", "Date", "Type", "Liters", "Description", "Amount"], ...exportRows.map(row => [row["Trip Reference"], row.Asset, row.Date, row.Type, String(row["Fuel Volume (L)"]), row.Description, money(row["Amount (TZS)"])])])}><Download className="size-3.5" />PDF</button>
             <button type="button" className={secondaryButton} onClick={() => exportExcel("kway-expenses", "Expenses", exportRows)}><Download className="size-3.5" />Excel</button>
@@ -239,8 +247,8 @@ export default function ExpensesTab({
             </div>
             {drafts.map((draft, index) => (
               <div key={draft.key} className="grid grid-cols-1 gap-3 rounded-2xl border border-[#e2e6e4] bg-white p-3 lg:grid-cols-[0.95fr_0.7fr_0.72fr_0.82fr_0.55fr_1.05fr_0.65fr_0.55fr_32px] lg:items-start lg:gap-2">
-                <RowField label="Trip reference"><select required className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.tripReference} onChange={event => updateDraft(draft.key, { tripReference: event.target.value })}><option value="" disabled>Select trip</option>{references.map(reference => <option key={reference} value={reference}>{reference}</option>)}</select></RowField>
-                <RowField label="Truck"><div className="flex h-10 items-center rounded-xl border border-[#dfe4e2] bg-[#f4f6f3] px-2.5 text-xs font-extrabold text-[#284055]">{tripDetails.get(draft.tripReference)?.truck.registrationNumber ?? "—"}</div></RowField>
+                <RowField label="Trip reference"><select required className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.tripReference} onChange={event => updateDraft(draft.key, { tripReference: event.target.value })}><option value="" disabled>Select trip</option>{references.map(reference => { const trip = tripDetails.get(reference); return <option key={reference} value={reference}>{reference}{trip ? ` · ${trip.truck.registrationNumber}` : ""}</option>; })}</select></RowField>
+                <RowField label="Truck">{tripDetails.get(draft.tripReference) ? <div className="min-h-10 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[9px] text-emerald-800"><p className="font-extrabold">{tripDetails.get(draft.tripReference)!.truck.registrationNumber} · {tripDetails.get(draft.tripReference)!.truck.model}</p><p className="mt-0.5 truncate text-emerald-700">{tripDetails.get(draft.tripReference)!.truck.driverName}</p></div> : <div className="flex h-10 items-center rounded-xl border border-[#dfe4e2] bg-[#f4f6f3] px-2.5 text-xs font-extrabold text-[#284055]">Select trip</div>}</RowField>
                 <RowField label="Date"><input required type="date" className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.expenseDate} onChange={event => updateDraft(draft.key, { expenseDate: event.target.value })} /></RowField>
                 <RowField label="Expense type"><select className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.expenseType} onChange={event => updateDraft(draft.key, { expenseType: event.target.value, customType: "" })}>{expenseTypeOptions.map(type => <option key={type} value={type}>{type}</option>)}<option value={CUSTOM_VALUE}>+ Add custom type</option></select>{draft.expenseType === CUSTOM_VALUE ? <input required autoFocus className={`${inputClass} mt-2 h-9 px-2.5 text-xs`} value={draft.customType} onChange={event => updateDraft(draft.key, { customType: event.target.value })} placeholder="Custom type name" /> : null}</RowField>
                 <RowField label="Liters">{(draft.expenseType === CUSTOM_VALUE ? draft.customType : draft.expenseType).trim().toLowerCase() === "fuel" ? <input required min="0.01" step="0.01" type="number" className={`${inputClass} h-10 px-2.5 text-xs`} value={draft.fuelLiters} onChange={event => updateDraft(draft.key, { fuelLiters: event.target.value })} placeholder="Liters" /> : <div className="flex h-10 items-center rounded-xl border border-[#e7eae8] bg-[#f7f8f5] px-2.5 text-xs text-[#9aa2a7]">—</div>}</RowField>

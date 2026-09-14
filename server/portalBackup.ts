@@ -5,6 +5,8 @@ import {
   expenses,
   incomeAttachments,
   incomeRecords,
+  invoiceItems,
+  invoices,
   maintenanceRecords,
   truckDocuments,
   trucks,
@@ -27,6 +29,8 @@ export type PortalBackup = {
     expenseAttachments: (typeof expenseAttachments.$inferSelect)[];
     expenseTypes: (typeof expenseTypes.$inferSelect)[];
     maintenanceRecords: (typeof maintenanceRecords.$inferSelect)[];
+    invoices: (typeof invoices.$inferSelect)[];
+    invoiceItems: (typeof invoiceItems.$inferSelect)[];
   };
 };
 
@@ -70,7 +74,7 @@ export function validateBackupEnvelope(input: unknown) {
 
 export async function createPortalBackup(): Promise<PortalBackup> {
   const db = await requireDb();
-  const [truckRows, documentRows, incomeRows, incomeFileRows, expenseRows, expenseFileRows, typeRows, maintenanceRows] = await Promise.all([
+  const [truckRows, documentRows, incomeRows, incomeFileRows, expenseRows, expenseFileRows, typeRows, maintenanceRows, invoiceRows, invoiceItemRows] = await Promise.all([
     db.select().from(trucks),
     db.select().from(truckDocuments),
     db.select().from(incomeRecords),
@@ -79,6 +83,8 @@ export async function createPortalBackup(): Promise<PortalBackup> {
     db.select().from(expenseAttachments),
     db.select().from(expenseTypes),
     db.select().from(maintenanceRecords),
+    db.select().from(invoices),
+    db.select().from(invoiceItems),
   ]);
   return {
     format: BACKUP_FORMAT,
@@ -93,6 +99,8 @@ export async function createPortalBackup(): Promise<PortalBackup> {
       expenseAttachments: expenseFileRows,
       expenseTypes: typeRows,
       maintenanceRecords: maintenanceRows,
+      invoices: invoiceRows,
+      invoiceItems: invoiceItemRows,
     },
   };
 }
@@ -101,7 +109,7 @@ export async function importPortalBackup(input: unknown) {
   const backup = validateBackupEnvelope(input);
   const db = await requireDb();
   const data = backup.data as unknown as Record<string, unknown>;
-  const counts = { trucks: 0, documents: 0, income: 0, expenses: 0, maintenance: 0, attachments: 0, expenseTypes: 0 };
+  const counts = { trucks: 0, documents: 0, income: 0, expenses: 0, maintenance: 0, attachments: 0, expenseTypes: 0, invoices: 0, invoiceItems: 0 };
 
   await db.transaction(async transaction => {
     const truckIdMap = new Map<number, number>();
@@ -210,8 +218,13 @@ export async function importPortalBackup(input: unknown) {
 
     const expenseIdMap = new Map<number, number>();
     for (const source of records(data.expenses)) {
-      const mappedTruckId = source.truckId ? truckIdMap.get(Number(source.truckId)) ?? null : null;
       const tripReference = requiredText(source.tripReference, "Expense trip reference");
+      let mappedTruckId = source.truckId ? truckIdMap.get(Number(source.truckId)) ?? null : null;
+      if (tripReference !== "MAINTENANCE") {
+        const [trip] = await transaction.select({ truckId: incomeRecords.truckId }).from(incomeRecords)
+          .where(eq(incomeRecords.tripReference, tripReference)).limit(1);
+        mappedTruckId = trip?.truckId ?? mappedTruckId;
+      }
       const description = requiredText(source.description, "Expense description");
       const expenseDate = numericTimestamp(source.expenseDate) ?? Date.now();
       const existing = await transaction.select({ id: expenses.id }).from(expenses)
@@ -272,6 +285,57 @@ export async function importPortalBackup(input: unknown) {
           nextServiceDate: numericTimestamp(source.nextServiceDate),
         });
         counts.maintenance += 1;
+      }
+    }
+
+    const invoiceIdMap = new Map<number, number>();
+    for (const source of records(data.invoices)) {
+      const invoiceNumber = requiredText(source.invoiceNumber, "Invoice number");
+      const existing = await transaction.select({ id: invoices.id }).from(invoices)
+        .where(eq(invoices.invoiceNumber, invoiceNumber)).limit(1);
+      let invoiceId = existing[0]?.id;
+      if (!invoiceId) {
+        const [created] = await transaction.insert(invoices).values({
+          invoiceNumber,
+          invoiceDate: numericTimestamp(source.invoiceDate) ?? Date.now(),
+          customerName: requiredText(source.customerName, "Invoice customer name"),
+          customerTin: requiredText(source.customerTin, "Invoice customer TIN"),
+          customerVrn: requiredText(source.customerVrn, "Invoice customer VRN"),
+          containerNumber: optionalText(source.containerNumber),
+          currency: "USD",
+          bankDetails: requiredText(source.bankDetails, "Invoice bank details"),
+          notes: optionalText(source.notes),
+        }).$returningId();
+        invoiceId = created.id;
+        counts.invoices += 1;
+      }
+      invoiceIdMap.set(Number(source.id), invoiceId);
+    }
+
+    for (const source of records(data.invoiceItems)) {
+      const invoiceId = invoiceIdMap.get(Number(source.invoiceId));
+      if (!invoiceId) continue;
+      const description = requiredText(source.description, "Invoice item description");
+      const numberOfTrucks = Math.max(1, Number(source.numberOfTrucks ?? 1));
+      const unitPrice = Number(source.unitPrice ?? 0);
+      const totalPrice = Number(source.totalPrice ?? numberOfTrucks * unitPrice);
+      const existing = await transaction.select().from(invoiceItems)
+        .where(eq(invoiceItems.invoiceId, invoiceId));
+      const duplicate = existing.some(item =>
+        item.description === description
+        && item.numberOfTrucks === numberOfTrucks
+        && Number(item.unitPrice) === unitPrice
+        && Number(item.totalPrice) === totalPrice
+      );
+      if (!duplicate) {
+        await transaction.insert(invoiceItems).values({
+          invoiceId,
+          description,
+          numberOfTrucks,
+          unitPrice: unitPrice.toFixed(2),
+          totalPrice: totalPrice.toFixed(2),
+        });
+        counts.invoiceItems += 1;
       }
     }
   });

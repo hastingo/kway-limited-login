@@ -124,6 +124,31 @@ export const expenseAttachments = mysqlTable("expenseAttachments", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const invoices = mysqlTable("invoices", {
+  id: int("id").autoincrement().primaryKey(),
+  invoiceNumber: varchar("invoiceNumber", { length: 80 }).notNull().unique(),
+  invoiceDate: bigint("invoiceDate", { mode: "number" }).notNull(),
+  customerName: varchar("customerName", { length: 200 }).notNull(),
+  customerTin: varchar("customerTin", { length: 80 }).notNull(),
+  customerVrn: varchar("customerVrn", { length: 80 }).notNull(),
+  containerNumber: varchar("containerNumber", { length: 200 }),
+  currency: varchar("currency", { length: 12 }).default("USD").notNull(),
+  bankDetails: text("bankDetails").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const invoiceItems = mysqlTable("invoiceItems", {
+  id: int("id").autoincrement().primaryKey(),
+  invoiceId: int("invoiceId").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  numberOfTrucks: int("numberOfTrucks").notNull(),
+  unitPrice: decimal("unitPrice", { precision: 14, scale: 2 }).notNull(),
+  totalPrice: decimal("totalPrice", { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Truck = typeof trucks.$inferSelect;
@@ -132,3 +157,5 @@ export type IncomeRecord = typeof incomeRecords.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type ExpenseType = typeof expenseTypes.$inferSelect;
 export type MaintenanceRecord = typeof maintenanceRecords.$inferSelect;
+export type Invoice = typeof invoices.$inferSelect;
+export type InvoiceItem = typeof invoiceItems.$inferSelect;

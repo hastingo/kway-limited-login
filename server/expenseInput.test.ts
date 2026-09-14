@@ -3,7 +3,6 @@ import { expenseInput } from "./portalRouter";
 
 const baseExpense = {
   tripReference: "TRIP-0001",
-  truckId: 1,
   assetType: "truck" as const,
   expenseDate: Date.now(),
   description: "Trip operating cost",
@@ -24,5 +23,10 @@ describe("expenseInput", () => {
 
   it("does not require liters for other expense types", () => {
     expect(expenseInput.safeParse({ ...baseExpense, expenseType: "Road toll" }).success).toBe(true);
+  });
+
+  it("does not accept a caller-selected truck as the expense allocation source", () => {
+    const result = expenseInput.parse({ ...baseExpense, truckId: 999, expenseType: "Road toll" });
+    expect("truckId" in result).toBe(false);
   });
 });

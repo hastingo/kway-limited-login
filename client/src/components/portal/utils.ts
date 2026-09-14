@@ -6,6 +6,7 @@ export type TruckRecord = RouterOutputs["portal"]["trucks"]["list"][number];
 export type IncomeRecord = RouterOutputs["portal"]["income"]["list"][number];
 export type ExpenseRecord = RouterOutputs["portal"]["expenses"]["list"][number];
 export type MaintenanceRecord = RouterOutputs["portal"]["maintenance"]["list"][number];
+export type InvoiceRecord = RouterOutputs["portal"]["invoices"]["list"][number];
 
 export type UploadPayload = {
   name: string;

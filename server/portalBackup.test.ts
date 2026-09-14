@@ -14,6 +14,8 @@ const emptyBackup = {
     expenseAttachments: [],
     expenseTypes: [],
     maintenanceRecords: [],
+    invoices: [],
+    invoiceItems: [],
   },
 };
 
